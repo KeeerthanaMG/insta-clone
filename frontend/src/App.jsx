@@ -1,33 +1,80 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+import React from 'react'
+import { Routes, Route, Navigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import MainLayout from './layouts/MainLayout'
+import LoginPage from './pages/LoginPage'
+import RegisterPage from './pages/RegisterPage'
+import FeedPage from './pages/FeedPage'
+import ExplorePage from './pages/ExplorePage'
+import CreatePostPage from './pages/CreatePostPage'
+import MessagesPage from './pages/MessagesPage'
+import NotificationsPage from './pages/NotificationsPage'
+import ProfilePage from './pages/ProfilePage'
+import FlagPopup from './components/FlagPopup'
+import ProtectedRoute from './components/ProtectedRoute'
 
 function App() {
-  const [count, setCount] = useState(0)
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const token = localStorage.getItem('token')
+    setIsAuthenticated(!!token)
+    setLoading(false)
+  }, [])
+
+  const PublicRoute = ({ children }) => {
+    if (loading) {
+      return (
+        <div className="min-h-screen flex items-center justify-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-pink-500"></div>
+        </div>
+      )
+    }
+
+    return !isAuthenticated ? children : <Navigate to="/feed" replace />
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-pink-500"></div>
+      </div>
+    )
+  }
 
   return (
     <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.jsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
+      <FlagPopup />
+      <Routes>
+        <Route path="/login" element={
+          <PublicRoute>
+            <LoginPage onLogin={() => setIsAuthenticated(true)} />
+          </PublicRoute>
+        } />
+
+        <Route path="/register" element={
+          <PublicRoute>
+            <RegisterPage />
+          </PublicRoute>
+        } />
+
+        <Route path="/*" element={
+          <ProtectedRoute>
+            <MainLayout onLogout={() => setIsAuthenticated(false)}>
+              <Routes>
+                <Route path="/feed" element={<FeedPage />} />
+                <Route path="/explore" element={<ExplorePage />} />
+                <Route path="/create" element={<CreatePostPage />} />
+                <Route path="/messages" element={<MessagesPage />} />
+                <Route path="/notifications" element={<NotificationsPage />} />
+                <Route path="/profile" element={<ProfilePage />} />
+                <Route path="/" element={<Navigate to="/feed" replace />} />
+              </Routes>
+            </MainLayout>
+          </ProtectedRoute>
+        } />
+      </Routes>
     </>
   )
 }
