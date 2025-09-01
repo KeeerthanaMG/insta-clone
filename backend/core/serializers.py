@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .models import Post, Comment, Like, Save, Notification
+from .models import Post, Comment, Like, Save, Notification, ChatThread, ChatMessage
 
 User = get_user_model()
 
@@ -222,6 +222,45 @@ class CreateCommentSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Authentication required to comment.")
         
         return super().create(validated_data)
+
+
+class ChatMessageSerializer(serializers.ModelSerializer):
+    """
+    Serializer for chat messages.
+    """
+    sender = UserSummarySerializer(read_only=True)
+
+    class Meta:
+        model = ChatMessage
+        fields = ['id', 'thread', 'sender', 'text', 'created_at', 'is_read']
+        read_only_fields = ['id', 'sender', 'created_at', 'is_read']
+
+
+class ChatThreadSerializer(serializers.ModelSerializer):
+    """
+    Serializer for chat threads.
+    """
+    participants = UserSummarySerializer(many=True, read_only=True)
+    last_message = serializers.SerializerMethodField()
+    other_participant = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ChatThread
+        fields = ['id', 'participants', 'other_participant', 'last_message', 'updated_at', 'is_accepted']
+
+    def get_last_message(self, obj):
+        last_msg = obj.messages.last()
+        if last_msg:
+            return ChatMessageSerializer(last_msg).data
+        return None
+
+    def get_other_participant(self, obj):
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            other_user = obj.participants.exclude(id=request.user.id).first()
+            if other_user:
+                return UserSummarySerializer(other_user, context=self.context).data
+        return None
 
 
 class NotificationSerializer(serializers.ModelSerializer):

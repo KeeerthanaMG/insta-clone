@@ -77,6 +77,14 @@ export const commentsAPI = {
     createComment: (data) => api.post('/comments/', data),
 }
 
+export const messagesAPI = {
+    getThreads: () => api.get('/messages/threads/'),
+    startThread: (receiverId) => api.post('/messages/start/', { receiver_id: receiverId }),
+    acceptThread: (threadId) => api.post(`/messages/threads/${threadId}/accept/`),
+    getMessages: (threadId) => api.get(`/messages/threads/${threadId}/`),
+    createMessage: (threadId, text) => api.post(`/messages/threads/${threadId}/`, { text }),
+}
+
 export const notificationsAPI = {
     getNotifications: () => api.get('/notifications/'),
     markAsRead: (notificationId) => api.post(`/notifications/${notificationId}/read/`),

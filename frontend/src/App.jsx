@@ -68,6 +68,7 @@ function App() {
                 <Route path="/explore" element={<ExplorePage />} />
                 <Route path="/create" element={<CreatePostPage />} />
                 <Route path="/messages" element={<MessagesPage />} />
+                <Route path="/messages/:threadId" element={<MessagesPage />} />
                 <Route path="/notifications" element={<NotificationsPage />} />
                 <Route path="/profile" element={<ProfilePage />} />
                 <Route path="/profile/:username" element={<UserProfilePage />} />

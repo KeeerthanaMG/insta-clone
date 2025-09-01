@@ -35,6 +35,12 @@ urlpatterns = [
     path('notifications/<int:notification_id>/read/', views.NotificationReadView.as_view(), name='notification-read'),
     path('notifications/mark-all-read/', views.NotificationMarkAllReadView.as_view(), name='notifications-mark-all-read'),
     
+    # Messaging endpoints
+    path('messages/threads/', views.ThreadListView.as_view(), name='thread-list'),
+    path('messages/start/', views.StartThreadView.as_view(), name='thread-start'),
+    path('messages/threads/<int:thread_id>/accept/', views.AcceptThreadView.as_view(), name='thread-accept'),
+    path('messages/threads/<int:thread_id>/', views.MessageListView.as_view(), name='message-list'),
+
     # Alternative nested route for comments by post
     path('posts/<int:post_id>/comments/',
          views.CommentViewSet.as_view({'get': 'list', 'post': 'create'}),

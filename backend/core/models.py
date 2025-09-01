@@ -93,6 +93,34 @@ class Save(models.Model):
         return f"{self.user.username} saved post {self.post.id}"
 
 
+class ChatThread(models.Model):
+    participants = models.ManyToManyField(CustomUser, related_name="chat_threads")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    is_active = models.BooleanField(default=True) # For group chats, etc.
+    is_accepted = models.BooleanField(default=False) # For chat requests
+
+    class Meta:
+        ordering = ['-updated_at']
+
+    def __str__(self):
+        return f"Thread between {', '.join([user.username for user in self.participants.all()])}"
+
+
+class ChatMessage(models.Model):
+    thread = models.ForeignKey(ChatThread, on_delete=models.CASCADE, related_name="messages")
+    sender = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name="sent_chat_messages")
+    text = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    is_read = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ['created_at']
+
+    def __str__(self):
+        return f"Message from {self.sender.username} in thread {self.thread.id}"
+
+
 class Message(models.Model):
     sender = models.ForeignKey(
         CustomUser, 

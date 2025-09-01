@@ -31,12 +31,14 @@ ALLOWED_HOSTS = []
 # Application definition
 
 INSTALLED_APPS = [
+    "daphne",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "channels",
     "rest_framework",
     "rest_framework.authtoken",  # Make sure this is included
     "corsheaders",
@@ -72,6 +74,7 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = "instaclone.wsgi.application"
+ASGI_APPLICATION = "instaclone.asgi.application"
 
 
 # Database
@@ -115,7 +118,7 @@ USE_I18N = True
 
 USE_TZ = True
 
-
+ASGI_APPLICATION = "instaclone.asgi.application"
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
@@ -172,3 +175,17 @@ DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024   # 10MB
 # File upload settings
 FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10MB
 DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024   # 10MB
+
+# Channel Layers Configuration
+CHANNEL_LAYERS = {
+    "default": {
+        # For development, use InMemoryChannelLayer (simpler setup)
+        # For production, use Redis
+        "BACKEND": "channels.layers.InMemoryChannelLayer",
+        # Uncomment below for Redis in production:
+        # "BACKEND": "channels_redis.core.RedisChannelLayer",
+        # "CONFIG": {
+        #     "hosts": [("127.0.0.1", 6379)],
+        # },
+    },
+}

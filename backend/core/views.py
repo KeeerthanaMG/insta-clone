@@ -11,12 +11,16 @@ from rest_framework.authtoken.views import ObtainAuthToken
 from rest_framework.authtoken.models import Token
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
+from django.db.models import Q
 
-from .models import Post, Comment, Like, Save, Follow, Notification
+from .models import (
+    Post, Comment, Like, Save, Follow, Notification,
+    ChatThread, ChatMessage
+)
 from .serializers import (
     PostSerializer, CreatePostSerializer, 
     CommentSerializer, CreateCommentSerializer,
-    NotificationSerializer
+    NotificationSerializer, ChatThreadSerializer, ChatMessageSerializer
 )
 
 User = get_user_model()
@@ -882,3 +886,110 @@ class UserPostsView(APIView):
                 'profile_picture': user.profile_picture.url if user.profile_picture else None
             }
         }, status=status.HTTP_200_OK)
+
+
+class ThreadListView(APIView):
+    """
+    List chat threads for the current user.
+    Separates into 'inbox' (accepted) and 'requests' (pending).
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        threads = ChatThread.objects.filter(participants=user)
+        
+        inbox_threads = threads.filter(is_accepted=True)
+        request_threads = threads.filter(is_accepted=False).exclude(messages__sender=user)
+
+        inbox_serializer = ChatThreadSerializer(inbox_threads, many=True, context={'request': request})
+        requests_serializer = ChatThreadSerializer(request_threads, many=True, context={'request': request})
+
+        return Response({
+            'inbox': inbox_serializer.data,
+            'requests': requests_serializer.data
+        })
+
+
+class StartThreadView(APIView):
+    """
+    Start a new chat thread with another user.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        receiver_id = request.data.get('receiver_id')
+        if not receiver_id:
+            return Response({'error': 'Receiver ID is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            receiver = User.objects.get(id=receiver_id)
+        except User.DoesNotExist:
+            return Response({'error': 'User not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        sender = request.user
+        if sender == receiver:
+            return Response({'error': 'You cannot start a chat with yourself.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Check if a thread already exists
+        thread = ChatThread.objects.filter(participants=sender).filter(participants=receiver).first()
+
+        if not thread:
+            thread = ChatThread.objects.create()
+            thread.participants.add(sender, receiver)
+        
+        serializer = ChatThreadSerializer(thread, context={'request': request})
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+class AcceptThreadView(APIView):
+    """
+    Accept a chat request.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, thread_id):
+        try:
+            thread = ChatThread.objects.get(id=thread_id, participants=request.user)
+        except ChatThread.DoesNotExist:
+            return Response({'error': 'Thread not found or you are not a participant.'}, status=status.HTTP_404_NOT_FOUND)
+
+        thread.is_accepted = True
+        thread.save()
+        return Response({'message': 'Chat request accepted.'}, status=status.HTTP_200_OK)
+
+
+class MessageListView(APIView):
+    """
+    List messages in a thread and create new messages.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, thread_id):
+        try:
+            thread = ChatThread.objects.get(id=thread_id, participants=request.user)
+        except ChatThread.DoesNotExist:
+            return Response({'error': 'Thread not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        messages = thread.messages.all().order_by('created_at')
+        serializer = ChatMessageSerializer(messages, many=True, context={'request': request})
+        return Response(serializer.data)
+
+    def post(self, request, thread_id):
+        try:
+            thread = ChatThread.objects.get(id=thread_id, participants=request.user)
+        except ChatThread.DoesNotExist:
+            return Response({'error': 'Thread not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        if not thread.is_accepted:
+            # Allow only the person who did not initiate to accept by sending a message
+            if thread.messages.exists() and thread.messages.first().sender == request.user:
+                 return Response({'error': 'Cannot send message in a pending chat you started.'}, status=status.HTTP_403_FORBIDDEN)
+            thread.is_accepted = True
+            thread.save()
+
+        serializer = ChatMessageSerializer(data=request.data, context={'request': request})
+        if serializer.is_valid():
+            serializer.save(sender=request.user, thread=thread)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
