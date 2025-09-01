@@ -1,26 +1,28 @@
 import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
+import { useNavigate } from 'react-router-dom'
 import PostCard from '../components/PostCard'
-import { postsAPI } from '../lib/api'
-import { Camera } from 'lucide-react'
+import { feedAPI } from '../lib/api'
+import { Camera, Users, UserPlus } from 'lucide-react'
 
 const FeedPage = () => {
     const [posts, setPosts] = useState([])
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(null)
+    const navigate = useNavigate()
 
     useEffect(() => {
-        fetchPosts()
+        fetchFeed()
     }, [])
 
-    const fetchPosts = async () => {
+    const fetchFeed = async () => {
         try {
             setLoading(true)
-            const response = await postsAPI.getPosts()
-            setPosts(response.data.results || response.data || [])
+            const response = await feedAPI.getFeed()
+            setPosts(response.data.results || [])
         } catch (err) {
-            setError('Failed to load posts')
-            console.error('Error fetching posts:', err)
+            setError('Failed to load feed')
+            console.error('Error fetching feed:', err)
         } finally {
             setLoading(false)
         }
@@ -66,7 +68,7 @@ const FeedPage = () => {
                 </h3>
                 <p className="text-gray-500 mb-6">{error}</p>
                 <button
-                    onClick={fetchPosts}
+                    onClick={fetchFeed}
                     className="btn-primary"
                 >
                     Try Again
@@ -78,16 +80,29 @@ const FeedPage = () => {
     if (posts.length === 0) {
         return (
             <div className="max-w-2xl mx-auto text-center py-12">
-                <Camera className="h-16 w-16 text-gray-400 mx-auto mb-4" />
+                <Users className="h-16 w-16 text-gray-400 mx-auto mb-4" />
                 <h3 className="text-xl font-semibold text-gray-700 mb-2">
-                    No posts yet
+                    No posts in your feed
                 </h3>
                 <p className="text-gray-500 mb-6">
-                    Follow some users or create your first post to get started!
+                    Follow some users to see their posts here!
                 </p>
-                <button className="btn-primary">
-                    Create Post
-                </button>
+                <div className="space-y-3">
+                    <button
+                        onClick={() => navigate('/explore')}
+                        className="btn-primary flex items-center space-x-2 mx-auto"
+                    >
+                        <UserPlus className="h-4 w-4" />
+                        <span>Discover People</span>
+                    </button>
+                    <button
+                        onClick={() => navigate('/create')}
+                        className="btn-secondary flex items-center space-x-2 mx-auto"
+                    >
+                        <Camera className="h-4 w-4" />
+                        <span>Create Your First Post</span>
+                    </button>
+                </div>
             </div>
         )
     }

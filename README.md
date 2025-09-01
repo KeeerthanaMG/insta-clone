@@ -1,6 +1,6 @@
 # InstaCam - Full-Stack Instagram Clone
 
-A modern Instagram-like social media application built with Django REST Framework and React + Vite. Features include user authentication, photo sharing, likes, comments, messaging, and real-time notifications with CTF flag detection for bug bounty gamification.
+A modern Instagram-like social media application built with Django REST Framework and React + Vite. Features include user authentication, photo sharing, likes, comments, follow system, messaging, and real-time notifications with CTF flag detection for bug bounty gamification.
 
 ## 📋 Features
 
@@ -8,24 +8,32 @@ A modern Instagram-like social media application built with Django REST Framewor
 - ✅ User authentication with custom user model
 - ✅ Post creation with image upload
 - ✅ Like/Save functionality 
-- ✅ Comments system
+- ✅ Comments system with notifications
+- ✅ Follow/Unfollow system
+- ✅ Real-time notifications for likes, comments, follows
+- ✅ Feed filtered by followed users
 - ✅ RESTful API endpoints
 - ✅ Media file handling
 - ✅ CORS configuration
 - ✅ Admin panel integration
+- ✅ Token-based authentication
 
 ### Frontend (React + Vite)
 - ✅ Modern React 18 with hooks
 - ✅ Instagram-style responsive UI
 - ✅ Authentication flow (Login/Register)
-- ✅ Feed with post cards
+- ✅ Feed with post cards and interactions
+- ✅ Comments modal with real-time updates
 - ✅ Create post with image upload
-- ✅ Explore users and search
+- ✅ Explore users and search functionality
+- ✅ Follow/Unfollow with live counts
+- ✅ User profiles with posts grid
 - ✅ Messages interface
-- ✅ Notifications system
-- ✅ Profile management
+- ✅ Notifications system with badge
+- ✅ Profile management with bio editing
 - ✅ CTF flag detection popup
 - ✅ Mobile-responsive sidebar
+- ✅ Real-time notification polling
 
 ## 🏗️ Project Structure
 
@@ -126,13 +134,24 @@ insta_cam/
 - `POST /api/posts/{id}/save/` - Toggle save on post
 
 ### Comments
-- `GET /api/comments/` - List comments
-- `POST /api/comments/` - Create comment
 - `GET /api/posts/{id}/comments/` - Get post comments
+- `POST /api/comments/` - Create comment
+- `DELETE /api/comments/{id}/` - Delete comment
+
+### Follow System
+- `POST /api/users/{id}/follow/` - Follow user
+- `POST /api/users/{id}/unfollow/` - Unfollow user
+- `GET /api/feed/` - Get posts from followed users
+
+### Notifications
+- `GET /api/notifications/` - List user notifications
+- `POST /api/notifications/{id}/read/` - Mark notification as read
+- `POST /api/notifications/mark-all-read/` - Mark all as read
 
 ### Users
 - `GET /api/users/me/` - Current user profile
 - `PATCH /api/users/me/` - Update profile
+- `GET /api/users/{username}/` - Get user profile
 - `GET /api/users/?search=query` - Search users
 
 ## 🎨 Tech Stack

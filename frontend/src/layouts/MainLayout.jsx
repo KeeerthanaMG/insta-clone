@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { NavLink } from 'react-router-dom'
 import {
     Home,
@@ -12,17 +12,40 @@ import {
     X,
     Camera
 } from 'lucide-react'
+import { notificationsAPI } from '../lib/api'
 import NavbarMobile from '../components/NavbarMobile'
 
 const MainLayout = ({ children, onLogout }) => {
     const [sidebarOpen, setSidebarOpen] = useState(false)
+    const [unreadCount, setUnreadCount] = useState(0)
+
+    useEffect(() => {
+        fetchNotificationCount()
+        // Poll for notifications every 30 seconds
+        const interval = setInterval(fetchNotificationCount, 30000)
+        return () => clearInterval(interval)
+    }, [])
+
+    const fetchNotificationCount = async () => {
+        try {
+            const response = await notificationsAPI.getNotifications()
+            setUnreadCount(response.data.unread_count || 0)
+        } catch (error) {
+            console.error('Error fetching notification count:', error)
+        }
+    }
 
     const navigationItems = [
         { name: 'Home', path: '/feed', icon: Home },
         { name: 'Explore', path: '/explore', icon: Compass },
         { name: 'Create', path: '/create', icon: PlusSquare },
         { name: 'Messages', path: '/messages', icon: MessageCircle },
-        { name: 'Notifications', path: '/notifications', icon: Heart },
+        {
+            name: 'Notifications',
+            path: '/notifications',
+            icon: Heart,
+            badge: unreadCount > 0 ? unreadCount : null
+        },
         { name: 'Profile', path: '/profile', icon: User },
     ]
 
@@ -72,17 +95,22 @@ const MainLayout = ({ children, onLogout }) => {
 
                 {/* Navigation */}
                 <nav className="p-4 space-y-2 flex-1">
-                    {navigationItems.map(({ name, path, icon: Icon }) => (
+                    {navigationItems.map(({ name, path, icon: Icon, badge }) => (
                         <NavLink
                             key={name}
                             to={path}
                             onClick={closeSidebar}
                             className={({ isActive }) => `
-                nav-item ${isActive ? 'active' : ''}
+                nav-item ${isActive ? 'active' : ''} relative
               `}
                         >
                             <Icon className="h-6 w-6" />
                             <span className="text-lg font-medium">{name}</span>
+                            {badge && (
+                                <span className="absolute left-6 top-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
+                                    {badge > 99 ? '99+' : badge}
+                                </span>
+                            )}
                         </NavLink>
                     ))}
                 </nav>

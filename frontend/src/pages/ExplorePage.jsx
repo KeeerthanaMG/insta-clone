@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Search, UserPlus, Users } from 'lucide-react'
 import { usersAPI } from '../lib/api'
 import Avatar from '../components/Avatar'
@@ -8,6 +9,7 @@ const ExplorePage = () => {
     const [users, setUsers] = useState([])
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState('')
+    const navigate = useNavigate()
 
     useEffect(() => {
         if (searchQuery.trim()) {
@@ -29,17 +31,32 @@ const ExplorePage = () => {
         }
     }
 
-    const handleFollow = async (userId) => {
+    const handleFollow = async (user) => {
         try {
-            await usersAPI.followUser(userId)
-            setUsers(prev => prev.map(user =>
-                user.id === userId
-                    ? { ...user, is_following: !user.is_following }
-                    : user
+            let response
+            if (user.is_following) {
+                response = await usersAPI.unfollowUser(user.id)
+            } else {
+                response = await usersAPI.followUser(user.id)
+            }
+
+            // Update the user in the list
+            setUsers(prev => prev.map(u =>
+                u.id === user.id
+                    ? {
+                        ...u,
+                        is_following: response.data.is_following,
+                        followers_count: response.data.followers_count
+                    }
+                    : u
             ))
         } catch (err) {
-            console.error('Failed to follow user:', err)
+            console.error('Failed to follow/unfollow user:', err)
         }
+    }
+
+    const navigateToProfile = (username) => {
+        navigate(`/profile/${username}`)
     }
 
     return (
@@ -107,17 +124,33 @@ const ExplorePage = () => {
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {users.map((user) => (
-                    <div key={user.id} className="bg-white p-6 rounded-xl border border-gray-200 text-center">
-                        <Avatar
-                            src={user.profile_picture}
-                            alt={user.username}
-                            size="lg"
-                            className="mx-auto mb-4"
-                        />
-                        <h3 className="font-semibold text-gray-900 mb-1">{user.username}</h3>
-                        <p className="text-gray-500 text-sm mb-4">{user.bio || 'No bio available'}</p>
+                    <div key={user.id} className="bg-white p-6 rounded-xl border border-gray-200 text-center hover:shadow-md transition-shadow">
+                        <div
+                            className="cursor-pointer"
+                            onClick={() => navigateToProfile(user.username)}
+                        >
+                            <Avatar
+                                src={user.profile_picture}
+                                alt={user.username}
+                                size="lg"
+                                className="mx-auto mb-4"
+                            />
+                            <h3 className="font-semibold text-gray-900 mb-1 hover:text-pink-600 transition-colors">
+                                {user.username}
+                            </h3>
+                            <p className="text-gray-500 text-sm mb-2">
+                                {user.followers_count} followers
+                            </p>
+                            <p className="text-gray-500 text-sm mb-4 line-clamp-2">
+                                {user.bio || 'No bio available'}
+                            </p>
+                        </div>
+
                         <button
-                            onClick={() => handleFollow(user.id)}
+                            onClick={(e) => {
+                                e.stopPropagation()
+                                handleFollow(user)
+                            }}
                             className={`w-full py-2 px-4 rounded-lg font-medium transition-colors ${user.is_following
                                     ? 'bg-gray-200 text-gray-800 hover:bg-gray-300'
                                     : 'btn-primary'

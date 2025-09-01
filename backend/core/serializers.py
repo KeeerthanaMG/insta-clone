@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .models import Post, Comment, Like, Save
+from .models import Post, Comment, Like, Save, Notification
 
 User = get_user_model()
 
@@ -222,3 +222,58 @@ class CreateCommentSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Authentication required to comment.")
         
         return super().create(validated_data)
+
+
+class NotificationSerializer(serializers.ModelSerializer):
+    """
+    Serializer for notifications.
+    """
+    actor = UserSummarySerializer(read_only=True)
+    target_post = serializers.SerializerMethodField()
+    time_ago = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Notification
+        fields = ['id', 'actor', 'verb', 'target_post', 'created_at', 'time_ago', 'is_read']
+
+    def get_target_post(self, obj):
+        """
+        Returns basic post info if target_post exists.
+        """
+        if obj.target_post:
+            return {
+                'id': obj.target_post.id,
+                'image': self.get_post_image_url(obj.target_post),
+                'caption': obj.target_post.caption[:50] + '...' if len(obj.target_post.caption) > 50 else obj.target_post.caption
+            }
+        return None
+
+    def get_post_image_url(self, post):
+        """
+        Helper to get post image URL.
+        """
+        if post.image:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(post.image.url)
+            return post.image.url
+        return None
+
+    def get_time_ago(self, obj):
+        """
+        Returns time ago string.
+        """
+        from django.utils import timezone
+        from datetime import datetime, timedelta
+        
+        now = timezone.now()
+        diff = now - obj.created_at
+        
+        if diff.days > 0:
+            return f"{diff.days}d"
+        elif diff.seconds > 3600:
+            return f"{diff.seconds // 3600}h"
+        elif diff.seconds > 60:
+            return f"{diff.seconds // 60}m"
+        else:
+            return "now"

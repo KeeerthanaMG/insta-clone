@@ -20,7 +20,20 @@ urlpatterns = [
     # User endpoints
     path('users/me/', views.CurrentUserView.as_view(), name='current-user'),
     path('users/<str:username>/', views.UserProfileView.as_view(), name='user-profile'),
+    path('users/<str:username>/posts/', views.UserPostsView.as_view(), name='user-posts'),
     path('users/', views.UserSearchView.as_view(), name='user-search'),
+    
+    # Follow/Unfollow endpoints
+    path('users/<int:user_id>/follow/', views.FollowUserView.as_view(), name='follow-user'),
+    path('users/<int:user_id>/unfollow/', views.UnfollowUserView.as_view(), name='unfollow-user'),
+    
+    # Feed endpoint
+    path('feed/', views.FeedView.as_view(), name='feed'),
+    
+    # Notification endpoints
+    path('notifications/', views.NotificationListView.as_view(), name='notifications'),
+    path('notifications/<int:notification_id>/read/', views.NotificationReadView.as_view(), name='notification-read'),
+    path('notifications/mark-all-read/', views.NotificationMarkAllReadView.as_view(), name='notifications-mark-all-read'),
     
     # Alternative nested route for comments by post
     path('posts/<int:post_id>/comments/',

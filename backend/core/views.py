@@ -12,13 +12,34 @@ from rest_framework.authtoken.models import Token
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 
-from .models import Post, Comment, Like, Save
+from .models import Post, Comment, Like, Save, Follow, Notification
 from .serializers import (
     PostSerializer, CreatePostSerializer, 
     CommentSerializer, CreateCommentSerializer
 )
 
 User = get_user_model()
+
+
+def create_notification(recipient, actor, verb, target_post=None):
+    """
+    Helper function to create notifications.
+    Prevents creating notifications for self-actions.
+    """
+    if recipient != actor:
+        try:
+            notification, created = Notification.objects.get_or_create(
+                recipient=recipient,
+                actor=actor,
+                verb=verb,
+                target_post=target_post,
+                defaults={'is_read': False}
+            )
+            return notification
+        except Exception as e:
+            # Log error but don't break the main action
+            print(f"Error creating notification: {e}")
+    return None
 
 
 class PostViewSet(viewsets.ModelViewSet):
@@ -86,9 +107,23 @@ class PostViewSet(viewsets.ModelViewSet):
                     # Unlike the post
                     like_obj.delete()
                     liked = False
+                    # Remove notification if exists
+                    Notification.objects.filter(
+                        recipient=post.user,
+                        actor=user,
+                        verb='liked',
+                        target_post=post
+                    ).delete()
                 else:
                     # Like the post
                     liked = True
+                    # Create notification
+                    create_notification(
+                        recipient=post.user,
+                        actor=user,
+                        verb='liked',
+                        target_post=post
+                    )
                 
                 # Get updated like count
                 like_count = post.likes.count()
@@ -227,6 +262,14 @@ class CommentViewSet(viewsets.ModelViewSet):
             
             # Create the comment
             comment = serializer.save(user=request.user)
+            
+            # Create notification for post owner
+            create_notification(
+                recipient=post.user,
+                actor=request.user,
+                verb='commented',
+                target_post=post
+            )
             
             # Return the created comment with full details
             response_serializer = CommentSerializer(
@@ -521,6 +564,15 @@ class UserProfileView(APIView):
     def get(self, request, username):
         try:
             user = User.objects.get(username=username)
+            
+            # Check if current user is following this user
+            is_following = False
+            if request.user.is_authenticated and request.user != user:
+                is_following = Follow.objects.filter(
+                    follower=request.user,
+                    following=user
+                ).exists()
+            
             return Response({
                 'id': user.id,
                 'username': user.username,
@@ -531,7 +583,8 @@ class UserProfileView(APIView):
                 'followers_count': user.followers.count(),
                 'following_count': user.following.count(),
                 'posts_count': user.posts.count(),
-                'created_at': user.created_at
+                'created_at': user.created_at,
+                'is_following': is_following
             }, status=status.HTTP_200_OK)
         except User.DoesNotExist:
             return Response(
@@ -561,16 +614,250 @@ class UserSearchView(APIView):
         
         results = []
         for user in users:
+            is_following = False
+            if request.user.is_authenticated:
+                is_following = Follow.objects.filter(
+                    follower=request.user, 
+                    following=user
+                ).exists()
+            
             results.append({
                 'id': user.id,
                 'username': user.username,
                 'bio': user.bio,
                 'profile_picture': user.profile_picture.url if user.profile_picture else None,
                 'followers_count': user.followers.count(),
-                'is_following': False  # TODO: Implement follow check
+                'following_count': user.following.count(),
+                'is_following': is_following
             })
         
         return Response({
             'results': results,
             'count': len(results)
+        }, status=status.HTTP_200_OK)
+
+
+class FollowUserView(APIView):
+    """
+    Follow a user.
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request, user_id):
+        try:
+            target_user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return Response(
+                {'error': 'User not found.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        if target_user == request.user:
+            return Response(
+                {'error': 'You cannot follow yourself.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        follow_obj, created = Follow.objects.get_or_create(
+            follower=request.user,
+            following=target_user
+        )
+        
+        if created:
+            # Create notification for followed user
+            create_notification(
+                recipient=target_user,
+                actor=request.user,
+                verb='followed'
+            )
+            message = f'You are now following {target_user.username}'
+            is_following = True
+        else:
+            message = f'You are already following {target_user.username}'
+            is_following = True
+        
+        return Response({
+            'message': message,
+            'is_following': is_following,
+            'followers_count': target_user.followers.count(),
+            'following_count': request.user.following.count()
+        }, status=status.HTTP_200_OK)
+
+
+class UnfollowUserView(APIView):
+    """
+    Unfollow a user.
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request, user_id):
+        try:
+            target_user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return Response(
+                {'error': 'User not found.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        if target_user == request.user:
+            return Response(
+                {'error': 'You cannot unfollow yourself.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            follow_obj = Follow.objects.get(
+                follower=request.user,
+                following=target_user
+            )
+            follow_obj.delete()
+            
+            # Remove follow notification
+            Notification.objects.filter(
+                recipient=target_user,
+                actor=request.user,
+                verb='followed'
+            ).delete()
+            
+            message = f'You have unfollowed {target_user.username}'
+            is_following = False
+        except Follow.DoesNotExist:
+            message = f'You are not following {target_user.username}'
+            is_following = False
+        
+        return Response({
+            'message': message,
+            'is_following': is_following,
+            'followers_count': target_user.followers.count(),
+            'following_count': request.user.following.count()
+        }, status=status.HTTP_200_OK)
+
+
+class NotificationListView(APIView):
+    """
+    List notifications for the current user.
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        notifications = Notification.objects.filter(
+            recipient=request.user
+        ).order_by('-is_read', '-created_at')[:50]  # Limit to 50 most recent
+        
+        serializer = NotificationSerializer(
+            notifications, 
+            many=True, 
+            context={'request': request}
+        )
+        
+        unread_count = notifications.filter(is_read=False).count()
+        
+        return Response({
+            'results': serializer.data,
+            'unread_count': unread_count,
+            'count': notifications.count()
+        }, status=status.HTTP_200_OK)
+
+
+class NotificationReadView(APIView):
+    """
+    Mark a notification as read.
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request, notification_id):
+        try:
+            notification = Notification.objects.get(
+                id=notification_id,
+                recipient=request.user
+            )
+            notification.is_read = True
+            notification.save()
+            
+            return Response({
+                'message': 'Notification marked as read.'
+            }, status=status.HTTP_200_OK)
+            
+        except Notification.DoesNotExist:
+            return Response(
+                {'error': 'Notification not found.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+
+class NotificationMarkAllReadView(APIView):
+    """
+    Mark all notifications as read.
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request):
+        updated_count = Notification.objects.filter(
+            recipient=request.user,
+            is_read=False
+        ).update(is_read=True)
+        
+        return Response({
+            'message': f'{updated_count} notifications marked as read.',
+            'updated_count': updated_count
+        }, status=status.HTTP_200_OK)
+
+
+class FeedView(APIView):
+    """
+    Get posts from followed users only.
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        # Get users that the current user follows
+        following_users = request.user.following.values_list('following', flat=True)
+        
+        if not following_users:
+            return Response({
+                'results': [],
+                'count': 0,
+                'message': 'Follow some users to see their posts in your feed!'
+            }, status=status.HTTP_200_OK)
+        
+        # Get posts from followed users
+        posts = Post.objects.filter(
+            user__in=following_users
+        ).order_by('-created_at')
+        
+class UserPostsView(APIView):
+    """
+    Get posts by a specific user.
+    """
+    permission_classes = [AllowAny]
+    
+    def get(self, request, username):
+        try:
+            user = User.objects.get(username=username)
+        except User.DoesNotExist:
+            return Response(
+                {'error': 'User not found.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Get posts by this user
+        posts = Post.objects.filter(
+            user=user
+        ).order_by('-created_at')
+        
+        # Serialize posts with context
+        serializer = PostSerializer(
+            posts, 
+            many=True, 
+            context={'request': request}
+        )
+        
+        return Response({
+            'results': serializer.data,
+            'count': posts.count(),
+            'user': {
+                'id': user.id,
+                'username': user.username,
+                'profile_picture': user.profile_picture.url if user.profile_picture else None
+            }
         }, status=status.HTTP_200_OK)

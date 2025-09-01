@@ -65,14 +65,26 @@ export const postsAPI = {
 
 export const usersAPI = {
     getProfile: (username) => api.get(`/users/${username || 'me'}/`),
+    getUserPosts: (username) => api.get(`/users/${username}/posts/`),
     updateProfile: (data) => api.patch('/users/me/', data),
     searchUsers: (query) => api.get(`/users/?search=${query}`),
     followUser: (userId) => api.post(`/users/${userId}/follow/`),
+    unfollowUser: (userId) => api.post(`/users/${userId}/unfollow/`),
 }
 
 export const commentsAPI = {
     getComments: (postId) => api.get(`/posts/${postId}/comments/`),
     createComment: (data) => api.post('/comments/', data),
+}
+
+export const notificationsAPI = {
+    getNotifications: () => api.get('/notifications/'),
+    markAsRead: (notificationId) => api.post(`/notifications/${notificationId}/read/`),
+    markAllAsRead: () => api.post('/notifications/mark-all-read/'),
+}
+
+export const feedAPI = {
+    getFeed: () => api.get('/feed/'),
 }
 
 export default api

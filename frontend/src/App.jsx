@@ -10,6 +10,7 @@ import CreatePostPage from './pages/CreatePostPage'
 import MessagesPage from './pages/MessagesPage'
 import NotificationsPage from './pages/NotificationsPage'
 import ProfilePage from './pages/ProfilePage'
+import UserProfilePage from './pages/UserProfilePage'
 import FlagPopup from './components/FlagPopup'
 import ProtectedRoute from './components/ProtectedRoute'
 
@@ -69,6 +70,7 @@ function App() {
                 <Route path="/messages" element={<MessagesPage />} />
                 <Route path="/notifications" element={<NotificationsPage />} />
                 <Route path="/profile" element={<ProfilePage />} />
+                <Route path="/profile/:username" element={<UserProfilePage />} />
                 <Route path="/" element={<Navigate to="/feed" replace />} />
               </Routes>
             </MainLayout>

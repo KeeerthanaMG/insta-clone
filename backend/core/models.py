@@ -181,3 +181,42 @@ class Leaderboard(models.Model):
         self.total_points = self.user.points
         self.total_bugs_solved = self.user.bugs_solved
         self.save()
+
+
+class Notification(models.Model):
+    VERB_CHOICES = [
+        ('liked', 'Liked'),
+        ('commented', 'Commented'),
+        ('followed', 'Followed'),
+    ]
+    
+    recipient = models.ForeignKey(
+        CustomUser, 
+        on_delete=models.CASCADE, 
+        related_name="notifications"
+    )
+    actor = models.ForeignKey(
+        CustomUser, 
+        on_delete=models.CASCADE, 
+        related_name="actions"
+    )
+    verb = models.CharField(max_length=20, choices=VERB_CHOICES)
+    target_post = models.ForeignKey(
+        Post, 
+        on_delete=models.CASCADE, 
+        null=True, 
+        blank=True,
+        related_name="notifications"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    is_read = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ['-created_at']
+        # Prevent duplicate notifications
+        unique_together = ['recipient', 'actor', 'verb', 'target_post']
+
+    def __str__(self):
+        if self.target_post:
+            return f"{self.actor.username} {self.verb} {self.recipient.username}'s post"
+        return f"{self.actor.username} {self.verb} {self.recipient.username}"

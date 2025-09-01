@@ -1,41 +1,34 @@
 import React, { useState, useEffect } from 'react'
-import { Camera, Grid, Settings } from 'lucide-react'
+import { useParams, useNavigate } from 'react-router-dom'
+import { Camera, Grid, ArrowLeft, UserPlus } from 'lucide-react'
 import { usersAPI, postsAPI } from '../lib/api'
 import Avatar from '../components/Avatar'
 
-const ProfilePage = () => {
+const UserProfilePage = () => {
+    const { username } = useParams()
+    const navigate = useNavigate()
     const [profile, setProfile] = useState(null)
     const [posts, setPosts] = useState([])
     const [loading, setLoading] = useState(true)
-    const [editing, setEditing] = useState(false)
-    const [editData, setEditData] = useState({ bio: '' })
+    const [following, setFollowing] = useState(false)
+    const [followersCount, setFollowersCount] = useState(0)
 
     useEffect(() => {
-        fetchProfile()
-    }, [])
-
-    useEffect(() => {
-        // Fetch posts after profile is loaded
-        if (profile?.username) {
+        if (username) {
+            fetchProfile()
             fetchUserPosts()
         }
-    }, [profile])
+    }, [username])
 
     const fetchProfile = async () => {
         try {
-            const response = await usersAPI.getProfile()
+            const response = await usersAPI.getProfile(username)
             setProfile(response.data)
-            setEditData({ bio: response.data.bio || '' })
+            setFollowing(response.data.is_following || false)
+            setFollowersCount(response.data.followers_count || 0)
         } catch (err) {
             console.error('Error fetching profile:', err)
-            // Set dummy data if API fails
-            setProfile({
-                username: 'demo_user',
-                bio: 'Welcome to InstaCam!',
-                profile_picture: null,
-                followers_count: 0,
-                following_count: 0
-            })
+            navigate('/explore')
         } finally {
             setLoading(false)
         }
@@ -43,9 +36,8 @@ const ProfilePage = () => {
 
     const fetchUserPosts = async () => {
         try {
-            // Get current user's username first to fetch their specific posts
-            if (profile?.username) {
-                const response = await usersAPI.getUserPosts(profile.username)
+            if (username) {
+                const response = await usersAPI.getUserPosts(username)
                 setPosts(response.data.results || [])
             }
         } catch (err) {
@@ -54,13 +46,19 @@ const ProfilePage = () => {
         }
     }
 
-    const handleUpdateProfile = async () => {
+    const handleFollow = async () => {
         try {
-            await usersAPI.updateProfile(editData)
-            setProfile(prev => ({ ...prev, ...editData }))
-            setEditing(false)
+            let response
+            if (following) {
+                response = await usersAPI.unfollowUser(profile.id)
+            } else {
+                response = await usersAPI.followUser(profile.id)
+            }
+
+            setFollowing(response.data.is_following)
+            setFollowersCount(response.data.followers_count)
         } catch (err) {
-            console.error('Error updating profile:', err)
+            console.error('Error following/unfollowing user:', err)
         }
     }
 
@@ -81,26 +79,55 @@ const ProfilePage = () => {
         )
     }
 
+    if (!profile) {
+        return (
+            <div className="max-w-4xl mx-auto text-center py-12">
+                <Camera className="h-16 w-16 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-xl font-semibold text-gray-700">
+                    User not found
+                </h3>
+                <button
+                    onClick={() => navigate('/explore')}
+                    className="btn-primary mt-4"
+                >
+                    Back to Explore
+                </button>
+            </div>
+        )
+    }
+
     return (
         <div className="max-w-4xl mx-auto">
+            {/* Back button */}
+            <button
+                onClick={() => navigate('/explore')}
+                className="flex items-center space-x-2 text-gray-600 hover:text-gray-800 mb-6"
+            >
+                <ArrowLeft className="h-4 w-4" />
+                <span>Back to Explore</span>
+            </button>
+
             {/* Profile header */}
             <div className="bg-white rounded-xl border border-gray-200 p-6 mb-8">
                 <div className="flex items-start space-x-6">
                     <Avatar
-                        src={profile?.profile_picture}
-                        alt={profile?.username || 'User'}
+                        src={profile.profile_picture}
+                        alt={profile.username}
                         size="xl"
                     />
 
                     <div className="flex-1">
                         <div className="flex items-center space-x-4 mb-4">
-                            <h1 className="text-2xl font-bold text-gray-900">{profile?.username || 'User'}</h1>
+                            <h1 className="text-2xl font-bold text-gray-900">{profile.username}</h1>
                             <button
-                                onClick={() => setEditing(!editing)}
-                                className="btn-secondary flex items-center space-x-2"
+                                onClick={handleFollow}
+                                className={`flex items-center space-x-2 px-6 py-2 rounded-lg font-medium transition-colors ${following
+                                    ? 'bg-gray-200 text-gray-800 hover:bg-gray-300'
+                                    : 'btn-primary'
+                                    }`}
                             >
-                                <Settings className="h-4 w-4" />
-                                <span>Edit Profile</span>
+                                <UserPlus className="h-4 w-4" />
+                                <span>{following ? 'Following' : 'Follow'}</span>
                             </button>
                         </div>
 
@@ -110,36 +137,16 @@ const ProfilePage = () => {
                                 <div className="text-gray-500 text-sm">Posts</div>
                             </div>
                             <div className="text-center">
-                                <div className="font-bold text-lg">{profile?.followers_count || 0}</div>
+                                <div className="font-bold text-lg">{followersCount}</div>
                                 <div className="text-gray-500 text-sm">Followers</div>
                             </div>
                             <div className="text-center">
-                                <div className="font-bold text-lg">{profile?.following_count || 0}</div>
+                                <div className="font-bold text-lg">{profile.following_count || 0}</div>
                                 <div className="text-gray-500 text-sm">Following</div>
                             </div>
                         </div>
 
-                        {editing ? (
-                            <div className="space-y-3">
-                                <textarea
-                                    value={editData.bio}
-                                    onChange={(e) => setEditData({ ...editData, bio: e.target.value })}
-                                    placeholder="Write a bio..."
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500"
-                                    rows={3}
-                                />
-                                <div className="flex space-x-2">
-                                    <button onClick={handleUpdateProfile} className="btn-primary text-sm">
-                                        Save
-                                    </button>
-                                    <button onClick={() => setEditing(false)} className="btn-secondary text-sm">
-                                        Cancel
-                                    </button>
-                                </div>
-                            </div>
-                        ) : (
-                            <p className="text-gray-700">{profile?.bio || 'No bio yet'}</p>
-                        )}
+                        <p className="text-gray-700">{profile.bio || 'No bio available'}</p>
                     </div>
                 </div>
             </div>
@@ -157,12 +164,9 @@ const ProfilePage = () => {
                         <h3 className="text-xl font-semibold text-gray-700 mb-2">
                             No posts yet
                         </h3>
-                        <p className="text-gray-500 mb-6">
-                            Share your first photo to get started
+                        <p className="text-gray-500">
+                            {profile.username} hasn't shared any posts yet
                         </p>
-                        <button className="btn-primary">
-                            Create Post
-                        </button>
                     </div>
                 ) : (
                     <div className="grid grid-cols-3 gap-1 sm:gap-2">
@@ -190,5 +194,4 @@ const ProfilePage = () => {
     )
 }
 
-export default ProfilePage
-
+export default UserProfilePage
