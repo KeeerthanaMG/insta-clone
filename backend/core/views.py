@@ -15,24 +15,26 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from .models import Post, Comment, Like, Save, Follow, Notification
 from .serializers import (
     PostSerializer, CreatePostSerializer, 
-    CommentSerializer, CreateCommentSerializer
+    CommentSerializer, CreateCommentSerializer,
+    NotificationSerializer
 )
 
 User = get_user_model()
 
 
-def create_notification(recipient, actor, verb, target_post=None):
+def create_notification(receiver, sender, notification_type, post=None, comment=None):
     """
     Helper function to create notifications.
     Prevents creating notifications for self-actions.
     """
-    if recipient != actor:
+    if receiver != sender:
         try:
             notification, created = Notification.objects.get_or_create(
-                recipient=recipient,
-                actor=actor,
-                verb=verb,
-                target_post=target_post,
+                sender=sender,
+                receiver=receiver,
+                notification_type=notification_type,
+                post=post,
+                comment=comment,
                 defaults={'is_read': False}
             )
             return notification
@@ -109,20 +111,20 @@ class PostViewSet(viewsets.ModelViewSet):
                     liked = False
                     # Remove notification if exists
                     Notification.objects.filter(
-                        recipient=post.user,
-                        actor=user,
-                        verb='liked',
-                        target_post=post
+                        sender=user,
+                        receiver=post.user,
+                        notification_type='like',
+                        post=post
                     ).delete()
                 else:
                     # Like the post
                     liked = True
                     # Create notification
                     create_notification(
-                        recipient=post.user,
-                        actor=user,
-                        verb='liked',
-                        target_post=post
+                        receiver=post.user,
+                        sender=user,
+                        notification_type='like',
+                        post=post
                     )
                 
                 # Get updated like count
@@ -265,10 +267,11 @@ class CommentViewSet(viewsets.ModelViewSet):
             
             # Create notification for post owner
             create_notification(
-                recipient=post.user,
-                actor=request.user,
-                verb='commented',
-                target_post=post
+                receiver=post.user,
+                sender=request.user,
+                notification_type='comment',
+                post=post,
+                comment=comment
             )
             
             # Return the created comment with full details
@@ -666,9 +669,9 @@ class FollowUserView(APIView):
         if created:
             # Create notification for followed user
             create_notification(
-                recipient=target_user,
-                actor=request.user,
-                verb='followed'
+                receiver=target_user,
+                sender=request.user,
+                notification_type='follow'
             )
             message = f'You are now following {target_user.username}'
             is_following = True
@@ -714,11 +717,11 @@ class UnfollowUserView(APIView):
             
             # Remove follow notification
             Notification.objects.filter(
-                recipient=target_user,
-                actor=request.user,
-                verb='followed'
+                sender=request.user,
+                receiver=target_user,
+                notification_type='follow'
             ).delete()
-            
+
             message = f'You have unfollowed {target_user.username}'
             is_following = False
         except Follow.DoesNotExist:
@@ -740,9 +743,16 @@ class NotificationListView(APIView):
     permission_classes = [IsAuthenticated]
     
     def get(self, request):
-        notifications = Notification.objects.filter(
-            recipient=request.user
-        ).order_by('-is_read', '-created_at')[:50]  # Limit to 50 most recent
+        # Get all notifications for the user first
+        all_notifications = Notification.objects.filter(
+            receiver=request.user
+        ).order_by('-is_read', '-created_at')
+        
+        # Calculate unread count before slicing
+        unread_count = all_notifications.filter(is_read=False).count()
+        
+        # Then limit to 50 most recent
+        notifications = all_notifications[:50]
         
         serializer = NotificationSerializer(
             notifications, 
@@ -750,12 +760,10 @@ class NotificationListView(APIView):
             context={'request': request}
         )
         
-        unread_count = notifications.filter(is_read=False).count()
-        
         return Response({
             'results': serializer.data,
             'unread_count': unread_count,
-            'count': notifications.count()
+            'count': all_notifications.count()
         }, status=status.HTTP_200_OK)
 
 
@@ -769,7 +777,7 @@ class NotificationReadView(APIView):
         try:
             notification = Notification.objects.get(
                 id=notification_id,
-                recipient=request.user
+                receiver=request.user
             )
             notification.is_read = True
             notification.save()
@@ -793,7 +801,7 @@ class NotificationMarkAllReadView(APIView):
     
     def post(self, request):
         updated_count = Notification.objects.filter(
-            recipient=request.user,
+            receiver=request.user,
             is_read=False
         ).update(is_read=True)
         
@@ -825,6 +833,19 @@ class FeedView(APIView):
             user__in=following_users
         ).order_by('-created_at')
         
+        # Serialize posts with context
+        serializer = PostSerializer(
+            posts, 
+            many=True, 
+            context={'request': request}
+        )
+        
+        return Response({
+            'results': serializer.data,
+            'count': posts.count()
+        }, status=status.HTTP_200_OK)
+
+
 class UserPostsView(APIView):
     """
     Get posts by a specific user.

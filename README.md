@@ -152,6 +152,7 @@ insta_cam/
 - `GET /api/users/me/` - Current user profile
 - `PATCH /api/users/me/` - Update profile
 - `GET /api/users/{username}/` - Get user profile
+- `GET /api/users/{username}/posts/` - Get posts by specific user
 - `GET /api/users/?search=query` - Search users
 
 ## 🎨 Tech Stack

@@ -58,23 +58,22 @@ const NotificationsPage = () => {
         }
 
         // Navigate based on notification type
-        if (notification.target_post) {
-            // For post-related notifications, you could navigate to a post detail page
-            // For now, we'll stay on current page or navigate to feed
+        if (notification.post) {
+            // For post-related notifications, navigate to feed
             navigate('/feed')
-        } else if (notification.verb === 'followed') {
-            // Navigate to the actor's profile
-            navigate(`/profile/${notification.actor.username}`)
+        } else if (notification.notification_type === 'follow') {
+            // Navigate to the sender's profile
+            navigate(`/profile/${notification.sender.username}`)
         }
     }
 
-    const getNotificationIcon = (verb) => {
-        switch (verb) {
-            case 'liked':
+    const getNotificationIcon = (notificationType) => {
+        switch (notificationType) {
+            case 'like':
                 return <Heart className="h-6 w-6 text-red-500" />
-            case 'commented':
+            case 'comment':
                 return <MessageCircle className="h-6 w-6 text-blue-500" />
-            case 'followed':
+            case 'follow':
                 return <UserPlus className="h-6 w-6 text-green-500" />
             default:
                 return <Camera className="h-6 w-6 text-gray-500" />
@@ -82,12 +81,12 @@ const NotificationsPage = () => {
     }
 
     const getNotificationText = (notification) => {
-        switch (notification.verb) {
-            case 'liked':
+        switch (notification.notification_type) {
+            case 'like':
                 return 'liked your post'
-            case 'commented':
+            case 'comment':
                 return 'commented on your post'
-            case 'followed':
+            case 'follow':
                 return 'started following you'
             default:
                 return 'interacted with your content'
@@ -97,7 +96,7 @@ const NotificationsPage = () => {
     const filteredNotifications = notifications.filter(notification => {
         if (filter === 'all') return true
         if (filter === 'unread') return !notification.is_read
-        return notification.verb === filter
+        return notification.notification_type === filter
     })
 
     if (loading) {
@@ -147,15 +146,15 @@ const NotificationsPage = () => {
                                 label: 'Unread'
                             },
                             {
-                                key: 'liked',
+                                key: 'like',
                                 label: 'Likes'
                             },
                             {
-                                key: 'commented',
+                                key: 'comment',
                                 label: 'Comments'
                             },
                             {
-                                key: 'followed',
+                                key: 'follow',
                                 label: 'Follows'
                             }
                         ].map((tab) => (
@@ -195,12 +194,12 @@ const NotificationsPage = () => {
                                 <div className="flex items-center space-x-3">
                                     <div className="relative">
                                         <Avatar
-                                            src={notification.actor.profile_picture}
-                                            alt={notification.actor.username}
+                                            src={notification.sender?.profile_picture}
+                                            alt={notification.sender?.username}
                                             size="md"
                                         />
                                         <div className="absolute -bottom-1 -right-1 bg-white rounded-full p-1">
-                                            {getNotificationIcon(notification.verb)}
+                                            {getNotificationIcon(notification.notification_type)}
                                         </div>
                                     </div>
 
@@ -208,7 +207,7 @@ const NotificationsPage = () => {
                                         <div className="flex items-start justify-between">
                                             <div className="flex-1">
                                                 <p className="text-sm text-gray-900">
-                                                    <span className="font-medium">{notification.actor.username}</span>
+                                                    <span className="font-medium">{notification.sender?.username}</span>
                                                     {' '}
                                                     <span className="text-gray-600">
                                                         {getNotificationText(notification)}
@@ -219,9 +218,9 @@ const NotificationsPage = () => {
                                                 </p>
                                             </div>
 
-                                            {notification.target_post && (
+                                            {notification.post && (
                                                 <img
-                                                    src={notification.target_post.image}
+                                                    src={notification.post.image}
                                                     alt="Post"
                                                     className="w-12 h-12 object-cover rounded-lg ml-3"
                                                 />
@@ -234,7 +233,7 @@ const NotificationsPage = () => {
                                     )}
                                 </div>
 
-                                {notification.verb === 'followed' && (
+                                {notification.notification_type === 'follow' && (
                                     <div className="mt-3 ml-14">
                                         <button className="btn-primary text-sm py-1 px-4">
                                             Follow Back

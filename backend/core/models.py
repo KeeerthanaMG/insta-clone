@@ -184,39 +184,47 @@ class Leaderboard(models.Model):
 
 
 class Notification(models.Model):
-    VERB_CHOICES = [
-        ('liked', 'Liked'),
-        ('commented', 'Commented'),
-        ('followed', 'Followed'),
+    NOTIFICATION_TYPE_CHOICES = [
+        ('like', 'Like'),
+        ('comment', 'Comment'),
+        ('follow', 'Follow'),
     ]
     
-    recipient = models.ForeignKey(
+    sender = models.ForeignKey(
         CustomUser, 
         on_delete=models.CASCADE, 
-        related_name="notifications"
+        related_name="sent_notifications"
     )
-    actor = models.ForeignKey(
+    receiver = models.ForeignKey(
         CustomUser, 
         on_delete=models.CASCADE, 
-        related_name="actions"
+        related_name="received_notifications"
     )
-    verb = models.CharField(max_length=20, choices=VERB_CHOICES)
-    target_post = models.ForeignKey(
+    notification_type = models.CharField(max_length=20, choices=NOTIFICATION_TYPE_CHOICES)
+    post = models.ForeignKey(
         Post, 
         on_delete=models.CASCADE, 
         null=True, 
         blank=True,
         related_name="notifications"
     )
-    created_at = models.DateTimeField(auto_now_add=True)
+    comment = models.ForeignKey(
+        Comment, 
+        on_delete=models.CASCADE, 
+        null=True, 
+        blank=True,
+        related_name="notifications"
+    )
     is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ['-created_at']
-        # Prevent duplicate notifications
-        unique_together = ['recipient', 'actor', 'verb', 'target_post']
 
     def __str__(self):
-        if self.target_post:
-            return f"{self.actor.username} {self.verb} {self.recipient.username}'s post"
-        return f"{self.actor.username} {self.verb} {self.recipient.username}"
+        if self.post:
+            return f"{self.sender.username} {self.notification_type}d {self.receiver.username}'s post"
+        elif self.comment:
+            return f"{self.sender.username} {self.notification_type}d {self.receiver.username}'s comment"
+        else:
+            return f"{self.sender.username} {self.notification_type}ed {self.receiver.username}"

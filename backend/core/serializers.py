@@ -228,23 +228,36 @@ class NotificationSerializer(serializers.ModelSerializer):
     """
     Serializer for notifications.
     """
-    actor = UserSummarySerializer(read_only=True)
-    target_post = serializers.SerializerMethodField()
+    sender = UserSummarySerializer(read_only=True)
+    post = serializers.SerializerMethodField()
+    comment = serializers.SerializerMethodField()
     time_ago = serializers.SerializerMethodField()
 
     class Meta:
         model = Notification
-        fields = ['id', 'actor', 'verb', 'target_post', 'created_at', 'time_ago', 'is_read']
+        fields = ['id', 'sender', 'notification_type', 'post', 'comment', 'created_at', 'time_ago', 'is_read']
 
-    def get_target_post(self, obj):
+    def get_post(self, obj):
         """
-        Returns basic post info if target_post exists.
+        Returns basic post info if post exists.
         """
-        if obj.target_post:
+        if obj.post:
             return {
-                'id': obj.target_post.id,
-                'image': self.get_post_image_url(obj.target_post),
-                'caption': obj.target_post.caption[:50] + '...' if len(obj.target_post.caption) > 50 else obj.target_post.caption
+                'id': obj.post.id,
+                'image': self.get_post_image_url(obj.post),
+                'caption': obj.post.caption[:50] + '...' if len(obj.post.caption) > 50 else obj.post.caption
+            }
+        return None
+
+    def get_comment(self, obj):
+        """
+        Returns basic comment info if comment exists.
+        """
+        if obj.comment:
+            return {
+                'id': obj.comment.id,
+                'text': obj.comment.text[:50] + '...' if len(obj.comment.text) > 50 else obj.comment.text,
+                'post_id': obj.comment.post.id
             }
         return None
 

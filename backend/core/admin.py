@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from .models import (
     CustomUser, Follow, Post, Like, Comment, Save, 
-    Message, Bug, BugSolve, Leaderboard
+    Message, Bug, BugSolve, Leaderboard, Notification
 )
 
 
@@ -92,3 +92,14 @@ class LeaderboardAdmin(admin.ModelAdmin):
     list_display = ("user", "total_points", "total_bugs_solved")
     ordering = ("-total_points", "-total_bugs_solved")
     search_fields = ("user__username",)
+
+
+@admin.register(Notification)
+class NotificationAdmin(admin.ModelAdmin):
+    list_display = ("sender", "receiver", "notification_type", "is_read", "created_at")
+    list_filter = ("notification_type", "is_read", "created_at")
+    search_fields = ("sender__username", "receiver__username")
+    readonly_fields = ("created_at",)
+    
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related('sender', 'receiver', 'post', 'comment')
