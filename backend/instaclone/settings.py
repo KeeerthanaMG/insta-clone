@@ -180,12 +180,28 @@ DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024   # 10MB
 CHANNEL_LAYERS = {
     "default": {
         # For development, use InMemoryChannelLayer (simpler setup)
-        # For production, use Redis
         "BACKEND": "channels.layers.InMemoryChannelLayer",
-        # Uncomment below for Redis in production:
+        # For production with Redis, uncomment below:
         # "BACKEND": "channels_redis.core.RedisChannelLayer",
         # "CONFIG": {
         #     "hosts": [("127.0.0.1", 6379)],
         # },
+    },
+}
+
+# Logging configuration for CTF debug messages
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'loggers': {
+        'ctf_debug': {
+            'handlers': ['console'],
+            'level': 'INFO',
+        },
     },
 }

@@ -12,10 +12,13 @@ from rest_framework.authtoken.models import Token
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from django.db.models import Q
+import logging
+
+logger = logging.getLogger("ctf_debug")
 
 from .models import (
     Post, Comment, Like, Save, Follow, Notification,
-    ChatThread, ChatMessage
+    ChatThread, ChatMessage, Bug, BugSolve, Leaderboard
 )
 from .serializers import (
     PostSerializer, CreatePostSerializer, 
@@ -966,13 +969,109 @@ class MessageListView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, thread_id):
+        print(f"[DEBUG] === MessageListView.get() called ===")
+        print(f"[DEBUG] thread_id: {thread_id} (type: {type(thread_id)})")
+        print(f"[DEBUG] request.user: {request.user} (ID: {request.user.id if request.user.is_authenticated else 'Anonymous'})")
+        
+        logger.info(f"[CTF] User {request.user.id} ({request.user.username}) requests thread_id={thread_id}")
+
         try:
-            thread = ChatThread.objects.get(id=thread_id, participants=request.user)
+            thread = ChatThread.objects.get(id=thread_id)
+            print(f"[DEBUG] Thread found: {thread}")
+            print(f"[DEBUG] Thread participants: {list(thread.participants.all())}")
+            logger.info(f"[CTF] Thread {thread_id} exists")
         except ChatThread.DoesNotExist:
+            print(f"[DEBUG] Thread {thread_id} does not exist")
+            logger.warning(f"[CTF] Thread {thread_id} does not exist")
             return Response({'error': 'Thread not found.'}, status=status.HTTP_404_NOT_FOUND)
 
+        is_participant = thread.participants.filter(id=request.user.id).exists()
+        print(f"[DEBUG] is_participant check: {is_participant}")
+        print(f"[DEBUG] User ID: {request.user.id}")
+        print(f"[DEBUG] Participant IDs: {list(thread.participants.values_list('id', flat=True))}")
+        logger.info(f"[CTF] User {request.user.id} is_participant={is_participant}")
+
+        # IDOR bug detection: user is NOT a participant
+        if not is_participant:
+            print(f"[DEBUG] === IDOR DETECTED ===")
+            logger.warning(f"[CTF] IDOR detected! User {request.user.id} accessing thread {thread_id} without permission")
+            
+            # Get or create the IDOR bug instance
+            bug, created = Bug.objects.get_or_create(
+                title="IDOR on Direct Messages",
+                defaults={
+                    "description": "Improper access control allows viewing messages in threads you are not a participant of.",
+                    "category": "security",
+                    "points": 100
+                }
+            )
+            print(f"[DEBUG] Bug object: {bug} (created: {created})")
+            
+            if created:
+                logger.info(f"[CTF] Created new bug: {bug.title}")
+            
+            # Check if user already solved this bug
+            already_solved = BugSolve.objects.filter(user=request.user, bug=bug).exists()
+            print(f"[DEBUG] already_solved: {already_solved}")
+            logger.info(f"[CTF] User {request.user.id} already_solved={already_solved}")
+
+            if not already_solved:
+                print(f"[DEBUG] === AWARDING POINTS ===")
+                # Award points and create records
+                with transaction.atomic():
+                    # Update user points and bugs solved
+                    old_points = request.user.points
+                    old_bugs_solved = request.user.bugs_solved
+                    
+                    request.user.points += bug.points
+                    request.user.bugs_solved += 1
+                    request.user.save()
+                    
+                    print(f"[DEBUG] User points: {old_points} -> {request.user.points}")
+                    print(f"[DEBUG] User bugs_solved: {old_bugs_solved} -> {request.user.bugs_solved}")
+                    
+                    # Update or create leaderboard entry
+                    leaderboard, _ = Leaderboard.objects.get_or_create(user=request.user)
+                    leaderboard.total_points = request.user.points
+                    leaderboard.total_bugs_solved = request.user.bugs_solved
+                    leaderboard.save()
+                    
+                    # Create BugSolve record
+                    bug_solve = BugSolve.objects.create(user=request.user, bug=bug)
+                    print(f"[DEBUG] Created BugSolve: {bug_solve}")
+                
+                logger.info(f"[CTF] User {request.user.id} awarded {bug.points} points for bug '{bug.title}'. Total points: {request.user.points}")
+                
+                response_data = {
+                    "flag_found": True,
+                    "flag": f"CTF{{idor_dm_{request.user.id}_{thread_id}}}",
+                    "bug_name": bug.title,
+                    "points_awarded": bug.points,
+                    "total_points": request.user.points,
+                    "message": "🎉 Congratulations! You found the IDOR bug in Direct Messages and earned points!"
+                }
+                print(f"[DEBUG] === RETURNING FLAG RESPONSE ===")
+                print(f"[DEBUG] Response data: {response_data}")
+                
+                return Response(response_data, status=status.HTTP_200_OK)
+            else:
+                print(f"[DEBUG] === USER ALREADY SOLVED BUG ===")
+                logger.info(f"[CTF] User {request.user.id} already solved bug '{bug.title}', no points awarded")
+                response_data = {
+                    "flag_found": False,
+                    "bug_name": bug.title,
+                    "message": "You have already solved this bug. No further points awarded.",
+                    "total_points": request.user.points
+                }
+                print(f"[DEBUG] Response data: {response_data}")
+                return Response(response_data, status=status.HTTP_403_FORBIDDEN)
+
+        # Normal access for participants
+        print(f"[DEBUG] === NORMAL ACCESS (USER IS PARTICIPANT) ===")
+        logger.info(f"[CTF] User {request.user.id} is allowed to view thread {thread_id}")
         messages = thread.messages.all().order_by('created_at')
         serializer = ChatMessageSerializer(messages, many=True, context={'request': request})
+        print(f"[DEBUG] Returning {len(messages)} messages")
         return Response(serializer.data)
 
     def post(self, request, thread_id):
@@ -993,3 +1092,31 @@ class MessageListView(APIView):
             serializer.save(sender=request.user, thread=thread)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class DebugThreadsView(APIView):
+    """
+    Debug view to list all threads - REMOVE IN PRODUCTION
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        threads = ChatThread.objects.all()
+        debug_data = []
+        
+        for thread in threads:
+            participants = list(thread.participants.values('id', 'username'))
+            debug_data.append({
+                'id': thread.id,
+                'participants': participants,
+                'is_accepted': thread.is_accepted,
+                'message_count': thread.messages.count(),
+                'created_at': thread.created_at
+            })
+        
+        return Response({
+            'total_threads': threads.count(),
+            'threads': debug_data,
+            'current_user_id': request.user.id,
+            'current_username': request.user.username
+        })

@@ -4,6 +4,7 @@ import { Search, Send, UserPlus, ArrowLeft } from 'lucide-react'
 import Avatar from '../components/Avatar'
 import { formatTimeAgo } from '../utils/timeAgo'
 import { messagesAPI, usersAPI } from '../lib/api'
+import FlagPopup from '../components/FlagPopup'
 
 const MessagesPage = () => {
     const { threadId } = useParams()
@@ -18,6 +19,7 @@ const MessagesPage = () => {
     const [searchQuery, setSearchQuery] = useState('')
     const [searchResults, setSearchResults] = useState([])
     const [isSearching, setIsSearching] = useState(false)
+    const [flagData, setFlagData] = useState(null)
 
     const socket = useRef(null)
     const messagesEndRef = useRef(null)
@@ -28,10 +30,16 @@ const MessagesPage = () => {
 
     useEffect(() => {
         if (threadId) {
+            console.log('[DEBUG] useEffect triggered with threadId:', threadId)
             const allThreads = [...inbox, ...requests]
             const foundThread = allThreads.find(t => t.id === parseInt(threadId))
+            console.log('[DEBUG] Found thread:', foundThread)
             if (foundThread) {
                 setSelectedThread(foundThread)
+                fetchMessages(threadId)
+            } else {
+                console.log('[DEBUG] Thread not found in user threads, but still fetching messages...')
+                // Still try to fetch messages even if thread not in user's list (for IDOR testing)
                 fetchMessages(threadId)
             }
         } else {
@@ -80,11 +88,39 @@ const MessagesPage = () => {
     }
 
     const fetchMessages = async (id) => {
+        console.log('[DEBUG] fetchMessages called with id:', id)
         try {
+            console.log('[DEBUG] Making API call to getMessages...')
             const response = await messagesAPI.getMessages(id)
-            setMessages(response.data)
+            console.log('[DEBUG] API response:', response.data)
+
+            // Check for CTF flag in response
+            if (response.data.flag_found !== undefined) {
+                console.log('[DEBUG] Flag response detected!')
+                console.log('[DEBUG] flag_found:', response.data.flag_found)
+
+                if (response.data.flag_found) {
+                    console.log('[DEBUG] Setting flag data for popup...')
+                    setFlagData({
+                        flag: response.data.flag,
+                        bug_name: response.data.bug_name,
+                        points_awarded: response.data.points_awarded,
+                        message: response.data.message
+                    })
+                    // Clear messages to prevent viewing after flag is found
+                    setMessages([])
+                    return
+                } else {
+                    console.log('[DEBUG] Bug already solved, showing message')
+                    alert(response.data.message) // Temporary alert for debugging
+                }
+            } else {
+                console.log('[DEBUG] No flag response, setting messages normally')
+                setMessages(response.data)
+            }
         } catch (error) {
-            console.error('Error fetching messages:', error)
+            console.error('[DEBUG] Error fetching messages:', error)
+            console.error('[DEBUG] Error response:', error.response?.data)
         }
     }
 
@@ -97,10 +133,10 @@ const MessagesPage = () => {
             console.error('No authentication token found')
             return
         }
-        
+
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
         const wsUrl = `${wsProtocol}//${window.location.host.replace('5173', '8000')}/ws/chat/${id}/?token=${token}`
-        
+
         console.log('Connecting to WebSocket:', wsUrl)
         socket.current = new WebSocket(wsUrl)
 
@@ -115,10 +151,17 @@ const MessagesPage = () => {
 
         socket.current.onclose = (event) => {
             console.log('WebSocket disconnected:', event.code, event.reason)
+            if (event.code === 4403) {
+                console.log('Access forbidden - you may have triggered a CTF flag')
+            }
         }
-        
+
         socket.current.onerror = (error) => {
-            console.error('WebSocket error:', error)
+            console.error('WebSocket error details:', {
+                url: wsUrl,
+                readyState: socket.current?.readyState,
+                error: error
+            })
         }
     }
 
@@ -279,6 +322,16 @@ const MessagesPage = () => {
                 <ConversationList />
                 <ChatWindow />
             </div>
+            {/* Show CTF flag popup if flagData is present */}
+            {flagData && (
+                <FlagPopup
+                    flag={flagData.flag}
+                    bugName={flagData.bug_name}
+                    points={flagData.points_awarded}
+                    message={flagData.message}
+                    onClose={() => setFlagData(null)}
+                />
+            )}
         </div>
     )
 }

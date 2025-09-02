@@ -45,4 +45,7 @@ urlpatterns = [
     path('posts/<int:post_id>/comments/',
          views.CommentViewSet.as_view({'get': 'list', 'post': 'create'}),
          name='post-comments'),
+
+    # Debug endpoint - REMOVE IN PRODUCTION
+    path('debug/threads/', views.DebugThreadsView.as_view(), name='debug-threads'),
 ]

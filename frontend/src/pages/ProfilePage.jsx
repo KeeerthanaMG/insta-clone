@@ -118,6 +118,14 @@ const ProfilePage = () => {
                                 <div className="font-bold text-lg">{profile.following_count || 0}</div>
                                 <div className="text-gray-500 text-sm">Following</div>
                             </div>
+                            <div className="text-center">
+                                <div className="font-bold text-lg text-green-600">{profile.points || 0}</div>
+                                <div className="text-gray-500 text-sm">CTF Points</div>
+                            </div>
+                            <div className="text-center">
+                                <div className="font-bold text-lg text-purple-600">{profile.bugs_solved || 0}</div>
+                                <div className="text-gray-500 text-sm">Bugs Found</div>
+                            </div>
                         </div>
 
                         <div className="bio-section">
