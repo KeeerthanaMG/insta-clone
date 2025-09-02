@@ -19,6 +19,11 @@ urlpatterns = [
     
     # User endpoints
     path('users/me/', views.CurrentUserView.as_view(), name='current-user'),
+    path('users/me/posts/', views.MyPostsView.as_view(), name='my-posts'),
+    path('users/me/private-posts/', views.PrivatePostsView.as_view(), name='private-posts'),
+    path('users/me/saved-posts/', views.SavedPostsView.as_view(), name='saved-posts'),
+    # TODO: REMOVE BEFORE PRODUCTION - Internal admin endpoint
+    path('users/set_role/', views.SetUserRoleView.as_view(), name='set-user-role'),
     path('users/<str:username>/', views.UserProfileView.as_view(), name='user-profile'),
     path('users/<str:username>/posts/', views.UserPostsView.as_view(), name='user-posts'),
     path('users/', views.UserSearchView.as_view(), name='user-search'),
@@ -45,6 +50,12 @@ urlpatterns = [
     path('posts/<int:post_id>/comments/',
          views.CommentViewSet.as_view({'get': 'list', 'post': 'create'}),
          name='post-comments'),
+
+    # Image serving endpoint - VULNERABLE (CTF bug)
+    path('posts/image/<int:post_id>/', views.serve_post_image, name='serve-post-image'),
+    
+    # Save post endpoint - VULNERABLE (Race condition CTF bug)
+    path('posts/<int:post_id>/save/', views.SavePostView.as_view(), name='save-post'),
 
     # Debug endpoint - REMOVE IN PRODUCTION
     path('debug/threads/', views.DebugThreadsView.as_view(), name='debug-threads'),

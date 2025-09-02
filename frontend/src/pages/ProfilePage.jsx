@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Camera, Grid, Edit3, Settings } from 'lucide-react'
+import { Camera, Grid, Edit3, Settings, Lock, Bookmark } from 'lucide-react'
 import { usersAPI } from '../lib/api'
 import Avatar from '../components/Avatar'
 import { motion } from 'framer-motion'
@@ -7,6 +7,9 @@ import { motion } from 'framer-motion'
 const ProfilePage = () => {
     const [profile, setProfile] = useState(null)
     const [posts, setPosts] = useState([])
+    const [privatePosts, setPrivatePosts] = useState([])
+    const [savedPosts, setSavedPosts] = useState([])
+    const [activeTab, setActiveTab] = useState('my-posts')
     const [loading, setLoading] = useState(true)
     const [editingBio, setEditingBio] = useState(false)
     const [bioText, setBioText] = useState('')
@@ -18,7 +21,7 @@ const ProfilePage = () => {
     useEffect(() => {
         // Fetch posts after profile is loaded
         if (profile?.username) {
-            fetchUserPosts()
+            fetchAllPosts()
         }
     }, [profile])
 
@@ -34,16 +37,23 @@ const ProfilePage = () => {
         }
     }
 
-    const fetchUserPosts = async () => {
+    const fetchAllPosts = async () => {
         try {
-            // Get current user's posts
-            if (profile?.username) {
-                const response = await usersAPI.getUserPosts(profile.username)
-                setPosts(response.data.results || [])
-            }
+            // Fetch all three types of posts
+            const [myPostsRes, privatePostsRes, savedPostsRes] = await Promise.all([
+                usersAPI.getMyPosts(),
+                usersAPI.getPrivatePosts(),
+                usersAPI.getSavedPosts()
+            ])
+
+            setPosts(myPostsRes.data.results || [])
+            setPrivatePosts(privatePostsRes.data.results || [])
+            setSavedPosts(savedPostsRes.data.results || [])
         } catch (err) {
             console.error('Error fetching posts:', err)
             setPosts([])
+            setPrivatePosts([])
+            setSavedPosts([])
         }
     }
 
@@ -55,6 +65,100 @@ const ProfilePage = () => {
         } catch (err) {
             console.error('Error updating bio:', err)
         }
+    }
+
+    const renderTabContent = () => {
+        let currentPosts = []
+        let emptyMessage = ''
+        let emptyIcon = <Camera className="h-16 w-16 text-gray-400 mx-auto mb-4" />
+
+        switch (activeTab) {
+            case 'my-posts':
+                currentPosts = posts
+                emptyMessage = 'No public posts yet'
+                emptyIcon = <Grid className="h-16 w-16 text-gray-400 mx-auto mb-4" />
+                break
+            case 'private-posts':
+                currentPosts = privatePosts
+                emptyMessage = 'No private posts yet'
+                emptyIcon = <Lock className="h-16 w-16 text-gray-400 mx-auto mb-4" />
+                break
+            case 'saved-posts':
+                currentPosts = savedPosts
+                emptyMessage = 'No saved posts yet'
+                emptyIcon = <Bookmark className="h-16 w-16 text-gray-400 mx-auto mb-4" />
+                break
+            default:
+                currentPosts = posts
+        }
+
+        if (currentPosts.length === 0) {
+            return (
+                <div className="text-center py-12">
+                    {emptyIcon}
+                    <h3 className="text-xl font-semibold text-gray-700 mb-2">
+                        {emptyMessage}
+                    </h3>
+                    <p className="text-gray-500 mb-6">
+                        {activeTab === 'my-posts' && 'Share your first photo to get started'}
+                        {activeTab === 'private-posts' && 'Create a private post to keep it just for you'}
+                        {activeTab === 'saved-posts' && 'Save posts you love to view them here'}
+                    </p>
+                    {activeTab !== 'saved-posts' && (
+                        <button
+                            onClick={() => window.location.href = '/create'}
+                            className="btn-primary"
+                        >
+                            Create Post
+                        </button>
+                    )}
+                </div>
+            )
+        }
+
+        return (
+            <div className="grid grid-cols-3 gap-1 sm:gap-2">
+                {currentPosts.map((post, index) => (
+                    <motion.div
+                        key={post.id}
+                        className="aspect-square relative group cursor-pointer"
+                        initial={{ opacity: 0, scale: 0.8 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ delay: index * 0.1 }}
+                    >
+                        <img
+                            src={activeTab === 'saved-posts' ? post.post?.image || post.image : post.image}
+                            alt="Post"
+                            className="w-full h-full object-cover rounded-lg"
+                        />
+                        {/* Private post indicator */}
+                        {activeTab === 'private-posts' && (
+                            <div className="absolute top-2 right-2 bg-black bg-opacity-50 rounded-full p-1">
+                                <Lock className="h-3 w-3 text-white" />
+                            </div>
+                        )}
+                        {/* Saved post indicator */}
+                        {activeTab === 'saved-posts' && (
+                            <div className="absolute top-2 right-2 bg-black bg-opacity-50 rounded-full p-1">
+                                <Bookmark className="h-3 w-3 text-white fill-white" />
+                            </div>
+                        )}
+                        <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-all duration-200 rounded-lg flex items-center justify-center">
+                            <div className="opacity-0 group-hover:opacity-100 text-white text-center">
+                                <div className="flex items-center space-x-4">
+                                    <span className="text-sm font-medium">
+                                        ❤️ {activeTab === 'saved-posts' ? (post.post?.like_count || post.like_count || 0) : (post.like_count || 0)}
+                                    </span>
+                                    <span className="text-sm font-medium">
+                                        💬 {activeTab === 'saved-posts' ? (post.post?.comment_count || post.comment_count || 0) : (post.comment_count || 0)}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </motion.div>
+                ))}
+            </div>
+        )
     }
 
     if (loading) {
@@ -107,7 +211,7 @@ const ProfilePage = () => {
 
                         <div className="flex space-x-8 mb-4">
                             <div className="text-center">
-                                <div className="font-bold text-lg">{posts.length}</div>
+                                <div className="font-bold text-lg">{posts.length + privatePosts.length}</div>
                                 <div className="text-gray-500 text-sm">Posts</div>
                             </div>
                             <div className="text-center">
@@ -175,60 +279,49 @@ const ProfilePage = () => {
                 </div>
             </div>
 
-            {/* Posts grid */}
+            {/* Posts section with tabs */}
             <div className="bg-white rounded-xl border border-gray-200 p-6">
-                <div className="flex items-center space-x-2 mb-6">
-                    <Grid className="h-5 w-5 text-gray-600" />
-                    <h2 className="text-lg font-semibold text-gray-900">Your Posts</h2>
+                {/* Tab navigation */}
+                <div className="border-b border-gray-200 mb-6">
+                    <nav className="flex space-x-8">
+                        <button
+                            onClick={() => setActiveTab('my-posts')}
+                            className={`py-2 px-1 border-b-2 font-medium text-sm flex items-center space-x-2 ${
+                                activeTab === 'my-posts'
+                                    ? 'border-pink-500 text-pink-600'
+                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                            }`}
+                        >
+                            <Grid className="h-4 w-4" />
+                            <span>My Posts ({posts.length})</span>
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('private-posts')}
+                            className={`py-2 px-1 border-b-2 font-medium text-sm flex items-center space-x-2 ${
+                                activeTab === 'private-posts'
+                                    ? 'border-pink-500 text-pink-600'
+                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                            }`}
+                        >
+                            <Lock className="h-4 w-4" />
+                            <span>Private Posts ({privatePosts.length})</span>
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('saved-posts')}
+                            className={`py-2 px-1 border-b-2 font-medium text-sm flex items-center space-x-2 ${
+                                activeTab === 'saved-posts'
+                                    ? 'border-pink-500 text-pink-600'
+                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                            }`}
+                        >
+                            <Bookmark className="h-4 w-4" />
+                            <span>Saved Posts ({savedPosts.length})</span>
+                        </button>
+                    </nav>
                 </div>
 
-                {posts.length === 0 ? (
-                    <div className="text-center py-12">
-                        <Camera className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-                        <h3 className="text-xl font-semibold text-gray-700 mb-2">
-                            No posts yet
-                        </h3>
-                        <p className="text-gray-500 mb-6">
-                            Share your first photo to get started
-                        </p>
-                        <button
-                            onClick={() => window.location.href = '/create'}
-                            className="btn-primary"
-                        >
-                            Create Your First Post
-                        </button>
-                    </div>
-                ) : (
-                    <div className="grid grid-cols-3 gap-1 sm:gap-2">
-                        {posts.map((post, index) => (
-                            <motion.div
-                                key={post.id}
-                                className="aspect-square relative group cursor-pointer"
-                                initial={{ opacity: 0, scale: 0.8 }}
-                                animate={{ opacity: 1, scale: 1 }}
-                                transition={{ delay: index * 0.1 }}
-                            >
-                                <img
-                                    src={post.image}
-                                    alt="Post"
-                                    className="w-full h-full object-cover rounded-lg"
-                                />
-                                <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-all duration-200 rounded-lg flex items-center justify-center">
-                                    <div className="opacity-0 group-hover:opacity-100 text-white text-center">
-                                        <div className="flex items-center space-x-4">
-                                            <span className="text-sm font-medium">
-                                                ❤️ {post.like_count || 0}
-                                            </span>
-                                            <span className="text-sm font-medium">
-                                                💬 {post.comment_count || 0}
-                                            </span>
-                                        </div>
-                                    </div>
-                                </div>
-                            </motion.div>
-                        ))}
-                    </div>
-                )}
+                {/* Tab content */}
+                {renderTabContent()}
             </div>
         </div>
     )

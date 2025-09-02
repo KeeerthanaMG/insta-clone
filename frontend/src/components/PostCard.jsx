@@ -1,3 +1,14 @@
+/**
+ * PostCard Component
+ * 
+ * Features:
+ * - Normal post interactions (like, save, comment)
+ * - CTF Race Condition Bug: If user clicks save button 10+ times rapidly,
+ *   triggers a race condition vulnerability detection in the backend
+ * - Bug found popup appears (no automatic redirection)
+ * - Points are awarded only once per user per bug
+ */
+
 import React, { useState } from 'react'
 import { motion } from 'framer-motion'
 import { Heart, MessageCircle, Send, Bookmark, MoreHorizontal } from 'lucide-react'
@@ -12,6 +23,10 @@ const PostCard = ({ post, onUpdated }) => {
     const [isSaved, setIsSaved] = useState(post.is_saved)
     const [commentCount, setCommentCount] = useState(post.comment_count || 0)
     const [showComments, setShowComments] = useState(false)
+    
+    // Track save clicks for race condition detection
+    const [saveClickCount, setSaveClickCount] = useState(0)
+    const [saveClickTimes, setSaveClickTimes] = useState([])
 
     const handleLike = async () => {
         try {
@@ -26,7 +41,33 @@ const PostCard = ({ post, onUpdated }) => {
 
     const handleSave = async () => {
         try {
+            // Track clicks for race condition detection
+            const currentTime = Date.now()
+            setSaveClickTimes(prev => {
+                const newTimes = [...prev, currentTime]
+                // Keep only clicks from the last 10 seconds
+                const filteredTimes = newTimes.filter(time => currentTime - time < 10000)
+                
+                // If user clicked 10+ times rapidly, they'll trigger the backend race condition
+                if (filteredTimes.length >= 10) {
+                    console.log('🚨 Race condition detected! You clicked the save button rapidly 10+ times!')
+                }
+                
+                return filteredTimes
+            })
+            
+            setSaveClickCount(prev => prev + 1)
+            
             const response = await postsAPI.savePost(post.id)
+            
+            // Check if this was a CTF response
+            if (response.data.vulnerability_detected) {
+                // CTF bug found - the API interceptor will handle the popup
+                // No automatic redirection - let user stay on current page
+                return
+            }
+            
+            // Normal save/unsave behavior
             setIsSaved(response.data.saved)
             onUpdated?.(post.id, { is_saved: response.data.saved })
         } catch (error) {

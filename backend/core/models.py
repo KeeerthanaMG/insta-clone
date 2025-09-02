@@ -47,6 +47,7 @@ class Post(models.Model):
     user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name="posts")
     image = models.ImageField(upload_to="posts/")
     caption = models.TextField(blank=True)
+    is_private = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -216,6 +217,7 @@ class Notification(models.Model):
         ('like', 'Like'),
         ('comment', 'Comment'),
         ('follow', 'Follow'),
+        ('save', 'Save'),
     ]
     
     sender = models.ForeignKey(

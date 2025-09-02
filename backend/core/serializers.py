@@ -43,7 +43,7 @@ class PostSerializer(serializers.ModelSerializer):
     class Meta:
         model = Post
         fields = [
-            'id', 'user', 'image', 'caption', 'created_at',
+            'id', 'user', 'image', 'caption', 'created_at', 'is_private',
             'like_count', 'comment_count', 'is_liked', 'is_saved'
         ]
 
@@ -131,8 +131,8 @@ class CreatePostSerializer(serializers.ModelSerializer):
         """
         Create a new post with the current user.
         """
-        # Remove is_private from validated_data as it's not a model field
-        validated_data.pop('is_private', None)
+        # Extract is_private value but don't remove it from validated_data
+        is_private = validated_data.get('is_private', False)
         
         # Get the user from the request context
         request = self.context.get('request')
@@ -329,3 +329,15 @@ class NotificationSerializer(serializers.ModelSerializer):
             return f"{diff.seconds // 60}m"
         else:
             return "now"
+
+
+class SavedPostSerializer(serializers.ModelSerializer):
+    """
+    Serializer for saved posts.
+    Includes the full post details for displaying in saved posts list.
+    """
+    post = PostSerializer(read_only=True)
+    
+    class Meta:
+        model = Save
+        fields = ['id', 'post', 'created_at']

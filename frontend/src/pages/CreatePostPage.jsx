@@ -7,6 +7,7 @@ const CreatePostPage = () => {
     const [selectedImage, setSelectedImage] = useState(null)
     const [imagePreview, setImagePreview] = useState('')
     const [caption, setCaption] = useState('')
+    const [isPrivate, setIsPrivate] = useState(false)
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState('')
     const navigate = useNavigate()
@@ -42,6 +43,7 @@ const CreatePostPage = () => {
             const formData = new FormData()
             formData.append('image', selectedImage)
             formData.append('caption', caption)
+            formData.append('is_private', isPrivate)
 
             await postsAPI.createPost(formData)
             navigate('/feed')
@@ -118,6 +120,22 @@ const CreatePostPage = () => {
                     <div className="mt-2 text-sm text-gray-500 text-right">
                         {caption.length}/2200
                     </div>
+                </div>
+
+                {/* Privacy Settings */}
+                <div className="bg-white rounded-xl border border-gray-200 p-6">
+                    <label className="flex items-center space-x-3">
+                        <input
+                            type="checkbox"
+                            checked={isPrivate}
+                            onChange={(e) => setIsPrivate(e.target.checked)}
+                            className="w-4 h-4 text-pink-600 bg-gray-100 border-gray-300 rounded focus:ring-pink-500 focus:ring-2"
+                        />
+                        <div>
+                            <span className="text-sm font-medium text-gray-900">Make this post private</span>
+                            <p className="text-xs text-gray-500">Only you will be able to see this post</p>
+                        </div>
+                    </label>
                 </div>
 
                 {/* Submit button */}
