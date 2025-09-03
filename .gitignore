@@ -47,6 +47,7 @@ desktop.ini
 .env.development
 .env.production
 
+venv
 # Logs
 *.log
 logs/
