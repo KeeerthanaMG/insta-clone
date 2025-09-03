@@ -342,7 +342,7 @@ class VulnerableMessageListView(APIView):
                 'ctf_message': bug_result['message'],
                 'ctf_points_awarded': bug_result['points_awarded'],
                 'ctf_total_points': bug_result['total_points'],
-                'flag': bug_result.get('flag'),
+                'flag': f"CTF{{idor_chat_messages_{request.user.id}_{thread_id}}}" if bug_result['success'] else None,
                 'thread_id': thread_id,
                 'participant_check_bypassed': True,
                 'bug_type': 'IDOR (Insecure Direct Object Reference)'

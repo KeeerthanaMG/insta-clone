@@ -112,7 +112,31 @@ const MessagesPage = () => {
             const response = await messagesAPI.getMessages(id)
             console.log('[DEBUG] API response:', response.data)
 
-            // Check for CTF flag in response
+            // Check for CTF vulnerability detection in response
+            if (response.data.vulnerability_detected) {
+                console.log('[DEBUG] CTF VULNERABILITY DETECTED!')
+                console.log('[DEBUG] CTF response:', response.data)
+
+                // Dispatch CTF event for FlagPopup
+                const ctfEvent = new CustomEvent('ctf-bug-found', {
+                    detail: {
+                        message: response.data.ctf_message,
+                        flag: response.data.flag,
+                        points: response.data.ctf_points_awarded,
+                        totalPoints: response.data.ctf_total_points,
+                        bugType: response.data.bug_type,
+                        description: response.data.description
+                    }
+                })
+                console.log('[DEBUG] Dispatching CTF event:', ctfEvent.detail)
+                window.dispatchEvent(ctfEvent)
+
+                // Don't show actual messages for IDOR vulnerability
+                setMessages([])
+                return
+            }
+
+            // Check for old-style CTF flag response (backward compatibility)
             if (response.data.flag_found !== undefined) {
                 console.log('[DEBUG] Flag response detected!')
                 console.log('[DEBUG] flag_found:', response.data.flag_found)

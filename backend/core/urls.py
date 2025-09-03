@@ -45,7 +45,8 @@ urlpatterns = [
     path('messages/threads/', views.ThreadListView.as_view(), name='thread-list'),
     path('messages/start/', views.StartThreadView.as_view(), name='thread-start'),
     path('messages/threads/<int:thread_id>/accept/', views.AcceptThreadView.as_view(), name='thread-accept'),
-    path('messages/threads/<int:thread_id>/', views.MessageListView.as_view(), name='message-list'),
+    # VULNERABLE: IDOR vulnerability in chat messages (CTF)
+    path('messages/threads/<int:thread_id>/', views.VulnerableMessageListView.as_view(), name='message-list'),
 
     # Alternative nested route for comments by post
     path('posts/<int:post_id>/comments/',
