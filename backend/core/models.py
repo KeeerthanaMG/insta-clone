@@ -184,14 +184,9 @@ class BugSolve(models.Model):
         return f"{self.user.username} solved {self.bug.title}"
 
     def save(self, *args, **kwargs):
-        # Update user points and bugs_solved count when a bug is solved
-        is_new = self.pk is None
+        # Remove automatic point/bug counting from model save
+        # This should only be handled by trigger_bug_found function
         super().save(*args, **kwargs)
-        
-        if is_new:
-            self.user.points += self.bug.points
-            self.user.bugs_solved += 1
-            self.user.save()
 
 
 class Leaderboard(models.Model):
@@ -258,3 +253,4 @@ class Notification(models.Model):
             return f"{self.sender.username} {self.notification_type}d {self.receiver.username}'s comment"
         else:
             return f"{self.sender.username} {self.notification_type}ed {self.receiver.username}"
+     

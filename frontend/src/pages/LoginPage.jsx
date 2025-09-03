@@ -9,6 +9,8 @@ const LoginPage = ({ onLogin }) => {
         password: ''
     })
     const [error, setError] = useState('')
+    const [success, setSuccess] = useState('')
+    const [rateLimitingDetected, setRateLimitingDetected] = useState(false)
     const [loading, setLoading] = useState(false)
     const navigate = useNavigate()
 
@@ -27,7 +29,24 @@ const LoginPage = ({ onLogin }) => {
         try {
             const response = await authAPI.login(formData)
 
-            // Store token from response
+            // Check if this is a CTF vulnerability detection response
+            if (response.data.vulnerability_detected) {
+                // Dispatch CTF bug found event for the popup
+                const ctfEvent = new CustomEvent('ctf-bug-found', {
+                    detail: {
+                        message: response.data.ctf_message,
+                        flag: response.data.flag,
+                        points: response.data.ctf_points_awarded,
+                        totalPoints: response.data.ctf_total_points,
+                        bugType: response.data.bug_type,
+                        description: response.data.description
+                    }
+                })
+                window.dispatchEvent(ctfEvent)
+                return
+            }
+
+            // Normal login success flow
             if (response.data.token) {
                 localStorage.setItem('token', response.data.token)
                 onLogin()
@@ -37,7 +56,55 @@ const LoginPage = ({ onLogin }) => {
             }
         } catch (err) {
             console.error('Login error:', err)
-            setError(err.response?.data?.error || err.response?.data?.message || 'Login failed')
+            
+            // Check if the error response contains CTF information
+            if (err.response?.data?.vulnerability_detected) {
+                const ctfEvent = new CustomEvent('ctf-bug-found', {
+                    detail: {
+                        message: err.response.data.ctf_message,
+                        flag: err.response.data.flag,
+                        points: err.response.data.ctf_points_awarded,
+                        totalPoints: err.response.data.ctf_total_points,
+                        bugType: err.response.data.bug_type,
+                        description: err.response.data.description
+                    }
+                })
+                window.dispatchEvent(ctfEvent)
+                return
+            }
+            
+            // Handle rate limiting bug detection message
+            if (err.response?.data?.rate_limiting_bug_detected) {
+                setError('')
+                setSuccess(err.response.data.ctf_message + ' ' + err.response.data.security_hint)
+                setRateLimitingDetected(true)
+                
+                // Dispatch the rate limiting detection event for FlagPopup
+                console.log('[DEBUG] Rate limiting bug detected, dispatching event:', err.response.data)
+                
+                if (err.response.data.dispatch_event && err.response.data.event_type === 'ctf-rate-limit-detected') {
+                    const rateLimitEvent = new CustomEvent('ctf-rate-limit-detected', {
+                        detail: err.response.data.event_data
+                    })
+                    console.log('[DEBUG] Dispatching rate limit event:', rateLimitEvent)
+                    window.dispatchEvent(rateLimitEvent)
+                } else {
+                    // Fallback - dispatch event anyway with available data
+                    const rateLimitEvent = new CustomEvent('ctf-rate-limit-detected', {
+                        detail: {
+                            bug_type: 'Rate Limiting Bypass',
+                            description: 'Application lacks proper rate limiting on login attempts',
+                            message: 'Rate limiting vulnerability detected! No protection against brute force attacks.',
+                            instruction: 'Now login with correct credentials to claim your points!',
+                            failed_attempts: err.response.data.failed_attempts_count || 10
+                        }
+                    })
+                    console.log('[DEBUG] Dispatching fallback rate limit event:', rateLimitEvent)
+                    window.dispatchEvent(rateLimitEvent)
+                }
+            } else {
+                setError(err.response?.data?.error || err.response?.data?.message || 'Login failed')
+            }
         } finally {
             setLoading(false)
         }
@@ -60,6 +127,22 @@ const LoginPage = ({ onLogin }) => {
                     {error && (
                         <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg">
                             {error}
+                        </div>
+                    )}
+
+                    {success && (
+                        <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg">
+                            <div className="flex items-center">
+                                <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                                </svg>
+                                {success}
+                            </div>
+                            {rateLimitingDetected && (
+                                <p className="mt-2 text-sm">
+                                    Now login with your correct credentials to claim the CTF points!
+                                </p>
+                            )}
                         </div>
                     )}
 

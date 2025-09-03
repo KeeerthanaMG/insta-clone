@@ -37,7 +37,7 @@ def trigger_bug_found(user, bug_title, points=50):
     """
     Helper function to handle bug discovery.
     Awards points only if this is the first time the user found this bug.
-    Fixed to prevent double counting.
+    Fixed to prevent double counting with proper atomic transactions.
     """
     try:
         # Get or create the bug entry
@@ -50,36 +50,48 @@ def trigger_bug_found(user, bug_title, points=50):
             }
         )
         
-        # Check if user already found this bug (atomic operation to prevent race conditions)
+        # Use atomic transaction to prevent race conditions and double counting
         with transaction.atomic():
-            bug_solve, created = BugSolve.objects.get_or_create(
+            # Use get_or_create with proper locking
+            bug_solve, created = BugSolve.objects.select_for_update().get_or_create(
                 user=user,
                 bug=bug
             )
             
             if created:
-                # First time finding this bug - update user stats in single transaction
-                User.objects.filter(id=user.id).update(
+                # First time finding this bug - update user stats atomically
+                # Use F() expressions to prevent race conditions
+                user_updated = User.objects.filter(id=user.id).update(
                     points=F('points') + points,
                     bugs_solved=F('bugs_solved') + 1
                 )
                 
-                # Refresh user object to get updated values
-                user.refresh_from_db()
-                
-                # Update or create leaderboard entry
-                leaderboard, _ = Leaderboard.objects.get_or_create(user=user)
-                leaderboard.update_stats()
-                
-                logger.info(f"[CTF] Bug '{bug_title}' solved by user {user.id} for {points} points")
-                
-                return {
-                    'success': True,
-                    'message': f'{bug_title} bug found! +{points} points',
-                    'points_awarded': points,
-                    'total_points': user.points,
-                    'flag': f'CTF{{{bug_title.lower().replace(" ", "_")}_{user.id}}}'
-                }
+                if user_updated:
+                    # Refresh user object to get updated values
+                    user.refresh_from_db()
+                    
+                    # Update or create leaderboard entry
+                    leaderboard, _ = Leaderboard.objects.get_or_create(user=user)
+                    leaderboard.update_stats()
+                    
+                    logger.info(f"[CTF] Bug '{bug_title}' solved by user {user.id} for {points} points. Total: {user.points}")
+                    
+                    return {
+                        'success': True,
+                        'message': f'{bug_title} bug found! +{points} points',
+                        'points_awarded': points,
+                        'total_points': user.points,
+                        'bugs_count': user.bugs_solved,
+                        'flag': f'CTF{{{bug_title.lower().replace(" ", "_")}_{user.id}}}'
+                    }
+                else:
+                    logger.error(f"[CTF] Failed to update user {user.id} stats")
+                    return {
+                        'success': False,
+                        'message': 'Error updating user stats.',
+                        'points_awarded': 0,
+                        'total_points': user.points
+                    }
             else:
                 # Already found this bug
                 logger.info(f"[CTF] User {user.id} attempted to re-solve bug '{bug_title}'")
@@ -87,7 +99,8 @@ def trigger_bug_found(user, bug_title, points=50):
                     'success': False,
                     'message': 'You have already found this bug. No extra points.',
                     'points_awarded': 0,
-                    'total_points': user.points
+                    'total_points': user.points,
+                    'bugs_count': user.bugs_solved
                 }
                 
     except Exception as e:
@@ -96,7 +109,8 @@ def trigger_bug_found(user, bug_title, points=50):
             'success': False,
             'message': 'Error processing bug discovery.',
             'points_awarded': 0,
-            'total_points': user.points if hasattr(user, 'points') else 0
+            'total_points': user.points if hasattr(user, 'points') else 0,
+            'bugs_count': user.bugs_solved if hasattr(user, 'bugs_solved') else 0
         }
 
 
@@ -719,15 +733,130 @@ def detect_sql_injection_attempt(search_query):
     return False
 
 
+def detect_xpath_injection_attempt(search_query):
+    """
+    Detect XPath injection attempts in user input without executing them.
+    Returns True if XPath injection patterns are found.
+    """
+    import re
+    
+    # Normalize the input for better pattern matching
+    normalized_query = search_query.strip()
+    
+    # Common XPath injection patterns to detect
+    xpath_injection_patterns = [
+        # Basic XPath injection patterns with quotes
+        r"'\s*(or|and)\s+\d+\s*=\s*\d+",                    # ' or 1=1, ' and 1=1
+        r"'\s*(or|and)\s+'\w+'\s*=\s*'\w+'",               # ' or 'a'='a'
+        r"'\s*(or|and)\s+'1'\s*=\s*'1'",                   # ' or '1'='1'
+        r"'\s*(or|and)\s+true\(\s*\)",                      # ' or true()
+        r"'\s*(or|and)\s+false\(\s*\)",                     # ' or false()
+        
+        # XPath injection without quotes
+        r"\s+(or|and)\s+\d+\s*=\s*\d+",                    # or 1=1, and 1=1
+        r"\s+(or|and)\s+true\(\s*\)",                       # or true()
+        r"\s+(or|and)\s+false\(\s*\)",                      # or false()
+        r"\s+(or|and)\s+not\(\s*\)",                        # or not()
+        
+        # XPath functions and operators
+        r"contains\s*\(",                                   # contains() function
+        r"starts-with\s*\(",                               # starts-with() function
+        r"substring\s*\(",                                  # substring() function
+        r"string-length\s*\(",                             # string-length() function
+        r"normalize-space\s*\(",                           # normalize-space() function
+        r"position\s*\(\s*\)",                             # position() function
+        r"last\s*\(\s*\)",                                 # last() function
+        r"count\s*\(",                                     # count() function
+        r"sum\s*\(",                                       # sum() function
+        r"floor\s*\(",                                     # floor() function
+        r"ceiling\s*\(",                                   # ceiling() function
+        r"round\s*\(",                                     # round() function
+        
+        # XPath axes
+        r"ancestor::",                                      # ancestor axis
+        r"ancestor-or-self::",                             # ancestor-or-self axis
+        r"child::",                                        # child axis
+        r"descendant::",                                   # descendant axis
+        r"descendant-or-self::",                           # descendant-or-self axis
+        r"following::",                                    # following axis
+        r"following-sibling::",                            # following-sibling axis
+        r"parent::",                                       # parent axis
+        r"preceding::",                                    # preceding axis
+        r"preceding-sibling::",                            # preceding-sibling axis
+        r"self::",                                         # self axis
+        
+        # XPath node tests
+        r"node\s*\(\s*\)",                                 # node() test
+        r"text\s*\(\s*\)",                                 # text() test
+        r"comment\s*\(\s*\)",                              # comment() test
+        r"processing-instruction\s*\(",                    # processing-instruction() test
+        
+        # XPath wildcards and special characters
+        r"\*",                                             # wildcard *
+        r"//",                                             # descendant-or-self shorthand
+        r"\.\.",                                           # parent node shorthand
+        r"\.",                                             # current node shorthand
+        
+        # XPath predicates and filters
+        r"\[.*\]",                                         # predicate expressions
+        r"@\w+",                                           # attribute references
+        
+        # Boolean operators in XPath context
+        r"'\s*(or|and)\s+",                                # Boolean operators with quotes
+        r"\s+(or|and)\s+.*=",                             # Boolean operators with comparisons
+        
+        # XPath string functions
+        r"concat\s*\(",                                    # concat() function
+        r"translate\s*\(",                                 # translate() function
+        
+        # Error-based XPath injection
+        r"'\s*(or|and)\s+1\s*div\s*0",                    # Division by zero
+        r"'\s*(or|and)\s+\w+\s*div\s*0",                  # Division by zero with variables
+        
+        # Time-based blind XPath injection (theoretical)
+        r"'\s*(or|and).*sleep\s*\(",                      # Sleep-like functions (if available)
+        
+        # Document structure manipulation
+        r"document\s*\(",                                  # document() function
+        r"system-property\s*\(",                          # system-property() function
+        
+        # Advanced XPath patterns
+        r"'\s*(or|and)\s+.*\[\s*\d+\s*\]",               # Array/position access
+        r"'\s*(or|and)\s+.*namespace::",                  # Namespace usage
+    ]
+    
+    # Check for XPath injection patterns (case-insensitive)
+    for pattern in xpath_injection_patterns:
+        if re.search(pattern, search_query, re.IGNORECASE):
+            return True
+    
+    # Additional check for common XPath keywords that shouldn't appear in usernames
+    dangerous_xpath_keywords = [
+        'TRUE()', 'FALSE()', 'CONTAINS(', 'STARTS-WITH(', 'SUBSTRING(',
+        'STRING-LENGTH(', 'NORMALIZE-SPACE(', 'POSITION()', 'LAST()',
+        'COUNT(', 'SUM(', 'ANCESTOR::', 'DESCENDANT::', 'FOLLOWING::',
+        'PRECEDING::', 'NODE()', 'TEXT()', 'COMMENT()', 'CONCAT(',
+        'TRANSLATE(', 'DOCUMENT(', 'SYSTEM-PROPERTY('
+    ]
+    
+    normalized_upper = normalized_query.upper()
+    for keyword in dangerous_xpath_keywords:
+        if keyword in normalized_upper:
+            return True
+    
+    return False
+
+
 class VulnerableUserSearchView(APIView):
     """
-    🚨 VULNERABLE ENDPOINT: SQL Injection in User Search
+    🚨 VULNERABLE ENDPOINT: XPath and SQL Injection in User Search
     
-    This endpoint is intentionally vulnerable to SQL injection for educational purposes.
-    It detects SQL injection attempts and awards CTF points instead of executing them.
+    This endpoint is intentionally vulnerable to both XPath and SQL injection for educational purposes.
+    It detects injection attempts and awards CTF points instead of executing them.
     
-    Expected exploit attempt:
-    GET /api/users/search?search=' OR 1=1 --
+    Expected exploit attempts:
+    GET /api/users/?search=' OR 1=1 --     (SQL injection)
+    GET /api/users/?search=' or '1'='1'   (XPath injection)
     """
     permission_classes = [AllowAny]
     
@@ -741,8 +870,58 @@ class VulnerableUserSearchView(APIView):
                 'message': 'Search query is required.'
             }, status=status.HTTP_200_OK)
         
-        # Check for SQL injection attempts BEFORE executing any queries
-        if detect_sql_injection_attempt(search_query):
+        # Check for XPath injection attempts FIRST (higher priority)
+        if detect_xpath_injection_attempt(search_query):
+            # XPath injection attempt detected!
+            logger.warning(f"[CTF] XPath injection attempt detected from user {request.user.id if request.user.is_authenticated else 'Anonymous'}: {search_query}")
+            
+            if request.user.is_authenticated:
+                # Trigger CTF bug detection
+                bug_response = trigger_bug_found(
+                    user=request.user,
+                    bug_title="XPath Injection in Find Friends",
+                    points=125  # Higher points for XPath injection (rarer vulnerability)
+                )
+                
+                if bug_response['success']:
+                    # First time finding this bug - return CTF response
+                    return Response({
+                        'vulnerability_detected': True,
+                        'ctf_message': bug_response['message'],
+                        'ctf_points_awarded': bug_response['points_awarded'],
+                        'ctf_total_points': bug_response['total_points'],
+                        'flag': f"CTF{{xpath_injection_find_friends_{request.user.id}}}",
+                        'description': 'You discovered an XPath injection vulnerability in the Find Friends search! This could allow attackers to bypass authentication or access unauthorized data.',
+                        'bug_type': 'XPath Injection',
+                        'attempted_payload': search_query[:100] + '...' if len(search_query) > 100 else search_query,
+                        'results': [],
+                        'count': 0
+                    }, status=status.HTTP_200_OK)
+                else:
+                    # Already found this bug
+                    return Response({
+                        'vulnerability_detected': True,
+                        'ctf_message': bug_response['message'],
+                        'ctf_points_awarded': 0,
+                        'ctf_total_points': bug_response['total_points'],
+                        'flag': f"CTF{{xpath_injection_find_friends_{request.user.id}}}",
+                        'description': 'XPath injection attempt detected, but you already found this vulnerability.',
+                        'bug_type': 'XPath Injection',
+                        'attempted_payload': search_query[:100] + '...' if len(search_query) > 100 else search_query,
+                        'results': [],
+                        'count': 0
+                    }, status=status.HTTP_200_OK)
+            else:
+                # Anonymous user attempted XPath injection
+                return Response({
+                    'error': 'Invalid search query. Please login to continue.',
+                    'message': 'XPath injection attempts are logged.',
+                    'results': [],
+                    'count': 0
+                }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Check for SQL injection attempts SECOND (if no XPath injection detected)
+        elif detect_sql_injection_attempt(search_query):
             # SQL injection attempt detected!
             logger.warning(f"[CTF] SQL injection attempt detected from user {request.user.id if request.user.is_authenticated else 'Anonymous'}: {search_query}")
             
@@ -793,7 +972,7 @@ class VulnerableUserSearchView(APIView):
         
         # Normal search functionality (safe parameterized query)
         try:
-            # Use Django ORM for safe querying (prevents actual SQL injection)
+            # Use Django ORM for safe querying (prevents actual injection)
             users = User.objects.filter(
                 username__icontains=search_query
             ).exclude(

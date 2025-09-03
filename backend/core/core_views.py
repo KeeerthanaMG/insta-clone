@@ -13,6 +13,8 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from django.db.models import Q
 import logging
+from django.core.cache import cache
+import time
 
 logger = logging.getLogger("ctf_debug")
 
@@ -510,10 +512,13 @@ class PostStatsView(viewsets.ViewSet):
 class LoginView(APIView):
     """
     Login view that returns a token for authentication.
+    VULNERABLE: No rate limiting - susceptible to brute-force attacks.
     """
     permission_classes = [AllowAny]
     
     def post(self, request):
+        from .ctf_views import trigger_bug_found
+        
         username = request.data.get('username')
         password = request.data.get('password')
         
@@ -523,9 +528,81 @@ class LoginView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
+        # Get client IP and session key for tracking
+        client_ip = self.get_client_ip(request)
+        session_key = request.session.session_key
+        
+        # Ensure we have a session
+        if not session_key:
+            request.session.create()
+            session_key = request.session.session_key
+        
+        cache_key = f"login_attempts_{client_ip}_{session_key}"
+        
+        # Get current failed attempts from cache
+        failed_attempts = cache.get(cache_key, [])
+        current_time = time.time()
+        
+        # Clean old attempts (older than 5 minutes)
+        failed_attempts = [attempt_time for attempt_time in failed_attempts if current_time - attempt_time < 300]
+        
+        # Try to authenticate
         user = authenticate(username=username, password=password)
         
         if user:
+            # Successful login - check for pending bug discoveries
+            pending_bugs = request.session.get('pending_bug_discoveries', [])
+            
+            # Clear failed attempts
+            cache.delete(cache_key)
+            
+            # Check if rate limiting bug was discovered in this session
+            rate_limiting_bug_found = False
+            new_pending_bugs = []
+            
+            for bug in pending_bugs:
+                if bug.get('bug_title') == 'Missing Rate Limiting in Login':
+                    rate_limiting_bug_found = True
+                    # Try to award points for this bug
+                    bug_response = trigger_bug_found(
+                        user=user,
+                        bug_title="Missing Rate Limiting in Login",
+                        points=75
+                    )
+                    
+                    # Generate token for successful login
+                    token, created = Token.objects.get_or_create(user=user)
+                    
+                    # Clear the pending bugs from session
+                    request.session['pending_bug_discoveries'] = new_pending_bugs
+                    request.session.save()
+                    
+                    # Return CTF response with login data
+                    return Response({
+                        # Normal login data
+                        'token': token.key,
+                        'user_id': user.id,
+                        'username': user.username,
+                        'email': user.email,
+                        # CTF bug discovery data
+                        'vulnerability_detected': True,
+                        'ctf_message': bug_response['message'],
+                        'ctf_points_awarded': bug_response['points_awarded'],
+                        'ctf_total_points': bug_response['total_points'],
+                        'flag': f"CTF{{missing_rate_limiting_login_{user.id}}}" if bug_response['success'] else None,
+                        'description': 'You discovered a missing rate limiting vulnerability! The login endpoint allows unlimited failed attempts, making it vulnerable to brute-force attacks.',
+                        'bug_type': 'Missing Rate Limiting',
+                        'security_note': 'In a real system, rate limiting should be implemented to prevent brute-force attacks.'
+                    }, status=status.HTTP_200_OK)
+                else:
+                    # Keep other pending bugs
+                    new_pending_bugs.append(bug)
+            
+            # Update session with remaining pending bugs
+            request.session['pending_bug_discoveries'] = new_pending_bugs
+            request.session.save()
+            
+            # Normal successful login (no pending bugs)
             token, created = Token.objects.get_or_create(user=user)
             return Response({
                 'token': token.key,
@@ -534,10 +611,91 @@ class LoginView(APIView):
                 'email': user.email
             }, status=status.HTTP_200_OK)
         else:
-            return Response(
-                {'error': 'Invalid credentials.'},
-                status=status.HTTP_401_UNAUTHORIZED
-            )
+            # Failed login - track the attempt
+            failed_attempts.append(current_time)
+            cache.set(cache_key, failed_attempts, 300)  # Store for 5 minutes
+            
+            # Check for brute-force attack (10+ failed attempts in 5 minutes)
+            if len(failed_attempts) >= 10:
+                # Brute-force detected! Store in session as pending discovery
+                logger.warning(f"[CTF] Rate limiting bug discovered in session {session_key} from IP {client_ip} targeting username {username}")
+                
+                # Store the bug discovery as pending in the session
+                pending_bugs = request.session.get('pending_bug_discoveries', [])
+                
+                # Check if this bug is already pending
+                already_pending = any(
+                    bug.get('bug_title') == 'Missing Rate Limiting in Login' 
+                    for bug in pending_bugs
+                )
+                
+                if not already_pending:
+                    pending_bugs.append({
+                        'bug_title': 'Missing Rate Limiting in Login',
+                        'timestamp': current_time,
+                        'target_username': username,
+                        'failed_attempts_count': len(failed_attempts),
+                        'client_ip': client_ip
+                    })
+                    request.session['pending_bug_discoveries'] = pending_bugs
+                    request.session.save()
+                    
+                    logger.info(f"[CTF] Rate limiting bug stored as pending for session {session_key}")
+                
+                # Clear the failed attempts after detection
+                cache.delete(cache_key)
+                
+                # Ensure event data is properly structured
+                event_data = {
+                    'bug_type': 'Rate Limiting Bypass',
+                    'description': 'Application lacks proper rate limiting on login attempts',
+                    'message': 'Rate limiting vulnerability detected! No protection against brute force attacks.',
+                    'instruction': 'Now login with correct credentials to claim your points!',
+                    'failed_attempts': len(failed_attempts),
+                    'target_username': username
+                }
+                
+                logger.info(f"[CTF] Sending rate limiting detection response with event_data: {event_data}")
+                
+                # Return response indicating vulnerability detected with dispatch instruction
+                return Response({
+                    'error': 'Invalid credentials.',
+                    'rate_limiting_bug_detected': True,
+                    'ctf_message': 'Rate limiting vulnerability detected! You have made 10+ failed login attempts.',
+                    'message': 'No rate limiting detected - this is a security vulnerability!',
+                    'failed_attempts_count': len(failed_attempts),
+                    'security_hint': 'Now login with correct credentials to gain CTF points for this discovery!',
+                    'vulnerability_type': 'Missing Rate Limiting',
+                    'points_pending': 75,
+                    'dispatch_event': True,
+                    'event_type': 'ctf-rate-limit-detected',
+                    'event_data': {
+                        'bug_type': 'Rate Limiting Bypass',
+                        'description': 'Application lacks proper rate limiting on login attempts',
+                        'message': 'Rate limiting vulnerability detected! No protection against brute force attacks.',
+                        'instruction': 'Now login with correct credentials to claim your points!',
+                        'failed_attempts': len(failed_attempts),
+                        'target_username': username
+                    }
+                }, status=status.HTTP_401_UNAUTHORIZED)
+            
+            # Normal failed login response
+            return Response({
+                'error': 'Invalid credentials.',
+                'failed_attempts': len(failed_attempts),
+                'attempts_remaining': max(0, 10 - len(failed_attempts))
+            }, status=status.HTTP_401_UNAUTHORIZED)
+    
+    def get_client_ip(self, request):
+        """
+        Get the client IP address from the request.
+        """
+        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+        if x_forwarded_for:
+            ip = x_forwarded_for.split(',')[0]
+        else:
+            ip = request.META.get('REMOTE_ADDR')
+        return ip or '127.0.0.1'  # Fallback for development
 
 
 class RegisterView(APIView):
@@ -696,7 +854,8 @@ class UserProfileView(APIView):
 
 class UserSearchView(APIView):
     """
-    Search users by username.
+    Basic user search by username (safe implementation).
+    For advanced search features, users should use the main search endpoint.
     """
     permission_classes = [AllowAny]
     
@@ -704,27 +863,43 @@ class UserSearchView(APIView):
         search_query = request.query_params.get('search', '')
         
         if not search_query:
-            return Response(
-                {'error': 'Search query is required.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return Response({
+                'error': 'Search query is required.',
+                'message': 'Please provide a search term.',
+                'results': [],
+                'count': 0
+            }, status=status.HTTP_400_BAD_REQUEST)
         
-        users = User.objects.filter(
-            username__icontains=search_query
-        ).exclude(id=request.user.id if request.user.is_authenticated else None)[:10]
-        
-        results = []
-        for user in users:
-            results.append({
-                'id': user.id,
-                'username': user.username,
-                'profile_picture': user.profile_picture.url if user.profile_picture else None
-            })
-        
-        return Response({
-            'results': results,
-            'count': len(results)
-        }, status=status.HTTP_200_OK)
+        # Simple, safe username search using Django ORM
+        try:
+            users = User.objects.filter(
+                username__icontains=search_query
+            ).exclude(
+                id=request.user.id if request.user.is_authenticated else None
+            )[:10]
+            
+            results = []
+            for user in users:
+                results.append({
+                    'id': user.id,
+                    'username': user.username,
+                    'profile_picture': user.profile_picture.url if user.profile_picture else None
+                })
+            
+            return Response({
+                'results': results,
+                'count': len(results),
+                'search_query': search_query,
+                'message': f'Found {len(results)} users matching "{search_query}"'
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            logger.error(f"Error in basic user search: {e}")
+            return Response({
+                'error': 'Search failed. Please try again.',
+                'results': [],
+                'count': 0
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class FollowUserView(APIView):

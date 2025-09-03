@@ -33,14 +33,24 @@ const RegisterPage = () => {
         setLoading(true)
 
         try {
-            await authAPI.register({
+            const response = await authAPI.register({
                 username: formData.username,
                 email: formData.email,
                 password: formData.password
             })
-            navigate('/login', {
-                state: { message: 'Account created successfully! Please sign in.' }
-            })
+            
+            // Check if registration returned a token (auto-login)
+            if (response.data.token) {
+                localStorage.setItem('token', response.data.token)
+                navigate('/feed', {
+                    state: { message: 'Account created successfully! Welcome to InstaCam.' }
+                })
+            } else {
+                // Fallback to login page if no token
+                navigate('/login', {
+                    state: { message: 'Account created successfully! Please sign in.' }
+                })
+            }
         } catch (err) {
             console.error('Registration error:', err)
             setError(err.response?.data?.error || err.response?.data?.message || 'Registration failed')

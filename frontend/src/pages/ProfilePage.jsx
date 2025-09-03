@@ -37,6 +37,21 @@ const ProfilePage = () => {
         }
     }
 
+    // Add effect to listen for CTF bug discoveries and refresh profile
+    useEffect(() => {
+        const handleBugFound = () => {
+            // Refresh profile data when a bug is found
+            fetchProfile()
+        }
+
+        // Listen for CTF events
+        window.addEventListener('ctf-bug-found', handleBugFound)
+        
+        return () => {
+            window.removeEventListener('ctf-bug-found', handleBugFound)
+        }
+    }, [])
+
     const fetchAllPosts = async () => {
         try {
             // Fetch all three types of posts
