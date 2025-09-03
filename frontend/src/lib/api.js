@@ -4,16 +4,16 @@ import axios from 'axios'
 const originalFetch = window.fetch
 window.fetch = async (...args) => {
     const response = await originalFetch(...args)
-    
+
     // Clone response to read body without consuming it
     const clonedResponse = response.clone()
-    
+
     try {
         // Only try to parse JSON responses
         const contentType = response.headers.get('content-type')
         if (contentType && contentType.includes('application/json')) {
             const data = await clonedResponse.json()
-            
+
             // Check for CTF flags in response
             if (data && data.flag) {
                 window.dispatchEvent(new CustomEvent('ctf-flag', {
@@ -24,7 +24,7 @@ window.fetch = async (...args) => {
             // Check for CTF vulnerability detection (privilege escalation, etc.)
             if (data && (data.ctf_message || data.vulnerability_detected)) {
                 window.dispatchEvent(new CustomEvent('ctf-bug-found', {
-                    detail: { 
+                    detail: {
                         message: data.ctf_message || data.message,
                         points_awarded: data.ctf_points_awarded || 0,
                         total_points: data.ctf_total_points || 0,
@@ -39,7 +39,7 @@ window.fetch = async (...args) => {
         // Ignore JSON parsing errors for non-JSON responses
         console.debug('Non-JSON response or parsing error:', error)
     }
-    
+
     return response
 }
 
@@ -78,7 +78,7 @@ api.interceptors.response.use(
         // Check for CTF vulnerability detection (privilege escalation, race conditions, etc.)
         if (response.data && (response.data.ctf_message || response.data.vulnerability_detected)) {
             window.dispatchEvent(new CustomEvent('ctf-bug-found', {
-                detail: { 
+                detail: {
                     message: response.data.ctf_message || response.data.message,
                     points_awarded: response.data.ctf_points_awarded || 0,
                     total_points: response.data.ctf_total_points || 0,
@@ -92,11 +92,33 @@ api.interceptors.response.use(
         return response
     },
     (error) => {
+        console.log('[DEBUG] API interceptor caught error:', error.response?.status, error.response?.data)
+
+        // Handle rate limiting bug detection in error responses
+        if (error.response?.data?.rate_limiting_bug_detected) {
+            console.log('[DEBUG] Rate limiting bug detected in API interceptor:', error.response.data)
+
+            const rateLimitEvent = new CustomEvent('ctf-rate-limit-detected', {
+                detail: {
+                    bug_type: 'Rate Limiting Bypass',
+                    description: 'Application lacks proper rate limiting on login attempts',
+                    message: 'Rate limiting vulnerability detected! No protection against brute force attacks.',
+                    instruction: 'Now login with correct credentials to claim your points!',
+                    failed_attempts: error.response.data.failed_attempts_count || 10,
+                    target_username: error.response.data.event_data?.target_username || 'unknown'
+                }
+            })
+            console.log('[DEBUG] Dispatching rate limit event from API interceptor:', rateLimitEvent)
+            window.dispatchEvent(rateLimitEvent)
+        }
+
         if (error.response?.status === 401) {
-            // Clear invalid token and redirect to login
-            localStorage.removeItem('token')
-            if (window.location.pathname !== '/login' && window.location.pathname !== '/register') {
-                window.location.href = '/login'
+            // Only clear token and redirect if it's not a rate limiting detection
+            if (!error.response?.data?.rate_limiting_bug_detected) {
+                localStorage.removeItem('token')
+                if (window.location.pathname !== '/login' && window.location.pathname !== '/register') {
+                    window.location.href = '/login'
+                }
             }
         }
         return Promise.reject(error)

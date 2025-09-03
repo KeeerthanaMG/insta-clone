@@ -16,3 +16,24 @@ export const handleCTFResponse = (response) => {
   }
   return false;
 };
+
+export const handleRateLimitingResponse = (errorResponse) => {
+  if (errorResponse.data && errorResponse.data.rate_limiting_bug_detected) {
+    console.log('[CTF] Rate limiting vulnerability detected in response');
+
+    const rateLimitEvent = new CustomEvent('ctf-rate-limit-detected', {
+      detail: {
+        bug_type: 'Rate Limiting Bypass',
+        description: 'Application lacks proper rate limiting on login attempts',
+        message: 'Rate limiting vulnerability detected! No protection against brute force attacks.',
+        instruction: 'Now login with correct credentials to claim your points!',
+        failed_attempts: errorResponse.data.failed_attempts_count || 10,
+        target_username: errorResponse.data.event_data?.target_username || 'unknown'
+      }
+    });
+
+    window.dispatchEvent(rateLimitEvent);
+    return true;
+  }
+  return false;
+};

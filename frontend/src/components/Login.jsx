@@ -20,6 +20,7 @@ const Login = ({ onLogin }) => {
 
         setLoading(true)
         setError('')
+        setSuccess('')
 
         try {
             const response = await fetch('http://localhost:8000/api/auth/login/', {
@@ -33,57 +34,64 @@ const Login = ({ onLogin }) => {
             })
 
             const data = await response.json()
-            
-            // Check if this is a successful login with CTF bug discovery
-            if (data.vulnerability_detected && data.ctf_points_awarded !== undefined) {
-                // Dispatch CTF login event for FlagPopup
-                const ctfEvent = new CustomEvent('ctf-login-bug', {
-                    detail: {
-                        ctf_message: data.ctf_message,
-                        ctf_points_awarded: data.ctf_points_awarded,
-                        ctf_total_points: data.ctf_total_points,
-                        flag: data.flag,
-                        bug_type: data.bug_type,
-                        description: data.description
-                    }
-                })
-                window.dispatchEvent(ctfEvent)
-            }
 
-            // Store auth data
-            localStorage.setItem('token', data.token)
-            localStorage.setItem('user', JSON.stringify({
-                id: data.user_id,
-                username: data.username,
-                email: data.email
-            }))
-            
-            onLogin(data)
-            navigate('/')
-        } catch (error) {
-            console.error('Login error:', error)
-            
-            if (error.response?.data) {
-                const errorData = error.response.data
-                
-                // Check if backend detected rate limiting bug and wants us to dispatch event
-                if (errorData.dispatch_event && errorData.event_type === 'ctf-rate-limit-detected') {
-                    console.log('[DEBUG] Backend detected rate limiting bug, dispatching frontend event')
-                    
-                    // Dispatch the rate limiting detection event
-                    const rateLimitEvent = new CustomEvent('ctf-rate-limit-detected', {
-                        detail: errorData.event_data
+            if (response.ok) {
+                // Check if this is a successful login with CTF bug discovery
+                if (data.vulnerability_detected && data.ctf_points_awarded !== undefined) {
+                    // Dispatch CTF login event for FlagPopup
+                    const ctfEvent = new CustomEvent('ctf-login-bug', {
+                        detail: {
+                            ctf_message: data.ctf_message,
+                            ctf_points_awarded: data.ctf_points_awarded,
+                            ctf_total_points: data.ctf_total_points,
+                            flag: data.flag,
+                            bug_type: data.bug_type,
+                            description: data.description
+                        }
                     })
+                    window.dispatchEvent(ctfEvent)
+                }
+
+                // Store auth data
+                localStorage.setItem('token', data.token)
+                localStorage.setItem('user', JSON.stringify({
+                    id: data.user_id,
+                    username: data.username,
+                    email: data.email
+                }))
+
+                onLogin(data)
+                navigate('/')
+            } else {
+                // Handle error responses
+                if (data.rate_limiting_bug_detected) {
+                    setError('')
+                    setSuccess(data.ctf_message + ' ' + data.security_hint)
+                    setRateLimitingDetected(true)
+
+                    // Dispatch the rate limiting detection event
+                    console.log('[DEBUG] Backend detected rate limiting bug, dispatching frontend event')
+
+                    const rateLimitEvent = new CustomEvent('ctf-rate-limit-detected', {
+                        detail: {
+                            bug_type: 'Rate Limiting Bypass',
+                            description: 'Application lacks proper rate limiting on login attempts',
+                            message: 'Rate limiting vulnerability detected! No protection against brute force attacks.',
+                            instruction: 'Now login with correct credentials to claim your points!',
+                            failed_attempts: data.failed_attempts_count || 10,
+                            target_username: username
+                        }
+                    })
+                    console.log('[DEBUG] Dispatching rate limit event:', rateLimitEvent)
                     window.dispatchEvent(rateLimitEvent)
-                    
-                    setError(`${errorData.error} (${errorData.failed_attempts_count} failed attempts detected)`)
                 } else {
                     // Normal error handling
-                    setError(errorData.error || errorData.message || 'Login failed')
+                    setError(data.error || data.message || 'Login failed')
                 }
-            } else {
-                setError('Network error. Please try again.')
             }
+        } catch (error) {
+            console.error('Login error:', error)
+            setError('Network error. Please try again.')
         } finally {
             setLoading(false)
         }
@@ -93,7 +101,7 @@ const Login = ({ onLogin }) => {
         <div className="flex items-center justify-center min-h-screen bg-gray-100">
             <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-sm">
                 <h2 className="text-2xl font-bold mb-6 text-center">InstaCam Login</h2>
-                
+
                 {error && (
                     <div className="mb-4 p-4 bg-red-100 border border-red-400 text-red-700 rounded-lg">
                         {error}

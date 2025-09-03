@@ -537,7 +537,8 @@ class LoginView(APIView):
             request.session.create()
             session_key = request.session.session_key
         
-        cache_key = f"login_attempts_{client_ip}_{session_key}"
+        # Use a simpler cache key based on IP and username (more reliable)
+        cache_key = f"login_attempts_{client_ip}_{username}"
         
         # Get current failed attempts from cache
         failed_attempts = cache.get(cache_key, [])
@@ -546,64 +547,111 @@ class LoginView(APIView):
         # Clean old attempts (older than 5 minutes)
         failed_attempts = [attempt_time for attempt_time in failed_attempts if current_time - attempt_time < 300]
         
+        logger.warning(f"[CTF RATE LIMIT] ========== LOGIN ATTEMPT ==========")
+        logger.warning(f"[CTF RATE LIMIT] Username: '{username}'")
+        logger.warning(f"[CTF RATE LIMIT] IP: {client_ip}")
+        logger.warning(f"[CTF RATE LIMIT] Session: {session_key[:8] if session_key else 'None'}...")
+        logger.warning(f"[CTF RATE LIMIT] Cache Key: {cache_key}")
+        logger.warning(f"[CTF RATE LIMIT] Raw failed attempts from cache: {failed_attempts}")
+        logger.warning(f"[CTF RATE LIMIT] Cleaned failed attempts count: {len(failed_attempts)}")
+        logger.warning(f"[CTF RATE LIMIT] Current time: {current_time}")
+        logger.warning(f"[CTF RATE LIMIT] ===============================")
+        
+        # Debug: Print cache backend info
+        print(f"[DEBUG] Cache backend: {cache.__class__.__name__}")
+        print(f"[DEBUG] Cache key: {cache_key}")
+        print(f"[DEBUG] Raw cache value: {cache.get(cache_key, 'NOT_FOUND')}")
+        print(f"[DEBUG] Cleaned failed attempts: {failed_attempts}")
+        print(f"[DEBUG] Count: {len(failed_attempts)}")
+        
         # Try to authenticate
         user = authenticate(username=username, password=password)
         
         if user:
             # Successful login - check for pending bug discoveries
-            pending_bugs = request.session.get('pending_bug_discoveries', [])
+            logger.error(f"[CTF RATE LIMIT] ========== SUCCESSFUL LOGIN ==========")
+            logger.error(f"[CTF RATE LIMIT] User: {user.username} (ID: {user.id})")
+            logger.error(f"[CTF RATE LIMIT] Session Key: {session_key}")
+            
+            # Check BOTH session and cache for pending bugs
+            pending_bugs_session = request.session.get('pending_bug_discoveries', [])
+            logger.error(f"[CTF RATE LIMIT] Pending bugs in SESSION: {pending_bugs_session}")
+            
+            # ALSO check cache for rate limiting bug (in case of session issues)
+            rate_limit_cache_key = f"rate_limit_bug_pending_{client_ip}_{username}"
+            pending_bug_cache = cache.get(rate_limit_cache_key)
+            logger.error(f"[CTF RATE LIMIT] Rate limit cache key: {rate_limit_cache_key}")
+            logger.error(f"[CTF RATE LIMIT] Pending bug in CACHE: {pending_bug_cache}")
             
             # Clear failed attempts
             cache.delete(cache_key)
+            logger.warning(f"[CTF RATE LIMIT] SUCCESS: Cleared cache for key {cache_key}")
             
-            # Check if rate limiting bug was discovered in this session
+            # Check for rate limiting bug in EITHER session OR cache
             rate_limiting_bug_found = False
-            new_pending_bugs = []
             
-            for bug in pending_bugs:
+            # Check session first
+            for bug in pending_bugs_session:
                 if bug.get('bug_title') == 'Missing Rate Limiting in Login':
                     rate_limiting_bug_found = True
-                    # Try to award points for this bug
-                    bug_response = trigger_bug_found(
-                        user=user,
-                        bug_title="Missing Rate Limiting in Login",
-                        points=75
-                    )
-                    
-                    # Generate token for successful login
-                    token, created = Token.objects.get_or_create(user=user)
-                    
-                    # Clear the pending bugs from session
-                    request.session['pending_bug_discoveries'] = new_pending_bugs
-                    request.session.save()
-                    
-                    # Return CTF response with login data
-                    return Response({
-                        # Normal login data
-                        'token': token.key,
-                        'user_id': user.id,
-                        'username': user.username,
-                        'email': user.email,
-                        # CTF bug discovery data
-                        'vulnerability_detected': True,
-                        'ctf_message': bug_response['message'],
-                        'ctf_points_awarded': bug_response['points_awarded'],
-                        'ctf_total_points': bug_response['total_points'],
-                        'flag': f"CTF{{missing_rate_limiting_login_{user.id}}}" if bug_response['success'] else None,
-                        'description': 'You discovered a missing rate limiting vulnerability! The login endpoint allows unlimited failed attempts, making it vulnerable to brute-force attacks.',
-                        'bug_type': 'Missing Rate Limiting',
-                        'security_note': 'In a real system, rate limiting should be implemented to prevent brute-force attacks.'
-                    }, status=status.HTTP_200_OK)
-                else:
-                    # Keep other pending bugs
-                    new_pending_bugs.append(bug)
+                    logger.error(f"[CTF RATE LIMIT] Found rate limiting bug in SESSION!")
+                    break
             
-            # Update session with remaining pending bugs
-            request.session['pending_bug_discoveries'] = new_pending_bugs
-            request.session.save()
+            # If not found in session, check cache
+            if not rate_limiting_bug_found and pending_bug_cache:
+                if pending_bug_cache.get('bug_title') == 'Missing Rate Limiting in Login':
+                    rate_limiting_bug_found = True
+                    logger.error(f"[CTF RATE LIMIT] Found rate limiting bug in CACHE!")
+                    # Add it to session for consistency
+                    pending_bugs_session.append(pending_bug_cache)
+            
+            if rate_limiting_bug_found:
+                # Try to award points for this bug
+                logger.error(f"[CTF RATE LIMIT] 🎉 AWARDING POINTS for rate limiting bug to user {user.username}")
+                
+                bug_response = trigger_bug_found(
+                    user=user,
+                    bug_title="Missing Rate Limiting in Login",
+                    points=75
+                )
+                
+                logger.error(f"[CTF RATE LIMIT] Bug response: {bug_response}")
+                
+                # Generate token for successful login
+                token, created = Token.objects.get_or_create(user=user)
+                
+                # Clear the pending bugs from BOTH session AND cache
+                request.session['pending_bug_discoveries'] = [
+                    bug for bug in pending_bugs_session 
+                    if bug.get('bug_title') != 'Missing Rate Limiting in Login'
+                ]
+                request.session.save()
+                cache.delete(rate_limit_cache_key)
+                
+                logger.error(f"[CTF RATE LIMIT] Cleared pending bugs from session and cache")
+                logger.error(f"[CTF RATE LIMIT] Returning CTF success response")
+                
+                # Return CTF response with login data
+                return Response({
+                    # Normal login data
+                    'token': token.key,
+                    'user_id': user.id,
+                    'username': user.username,
+                    'email': user.email,
+                    # CTF bug discovery data
+                    'vulnerability_detected': True,
+                    'ctf_message': bug_response['message'],
+                    'ctf_points_awarded': bug_response['points_awarded'],
+                    'ctf_total_points': bug_response['total_points'],
+                    'flag': f"CTF{{missing_rate_limiting_login_{user.id}}}" if bug_response['success'] else None,
+                    'description': 'You discovered a missing rate limiting vulnerability! The login endpoint allows unlimited failed attempts, making it vulnerable to brute-force attacks.',
+                    'bug_type': 'Missing Rate Limiting',
+                    'security_note': 'In a real system, rate limiting should be implemented to prevent brute-force attacks.'
+                }, status=status.HTTP_200_OK)
             
             # Normal successful login (no pending bugs)
             token, created = Token.objects.get_or_create(user=user)
+            logger.warning(f"[CTF RATE LIMIT] SUCCESS: Normal successful login for user {user.username} (no pending bugs)")
             return Response({
                 'token': token.key,
                 'user_id': user.id,
@@ -613,12 +661,32 @@ class LoginView(APIView):
         else:
             # Failed login - track the attempt
             failed_attempts.append(current_time)
+            
+            # CRITICAL: Update cache BEFORE checking threshold
             cache.set(cache_key, failed_attempts, 300)  # Store for 5 minutes
+            
+            logger.warning(f"[CTF RATE LIMIT] ========== FAILED LOGIN ==========")
+            logger.warning(f"[CTF RATE LIMIT] Failed login attempt #{len(failed_attempts)} for username '{username}'")
+            logger.warning(f"[CTF RATE LIMIT] IP: {client_ip}")
+            logger.warning(f"[CTF RATE LIMIT] BEFORE cache.set - failed_attempts: {failed_attempts}")
+            logger.warning(f"[CTF RATE LIMIT] Cache key used: {cache_key}")
+            logger.warning(f"[CTF RATE LIMIT] Storing in cache with TTL 300 seconds")
+            
+            # Debug: Verify the cache write IMMEDIATELY
+            verification = cache.get(cache_key, [])
+            logger.warning(f"[CTF RATE LIMIT] AFTER cache.set - verification: {verification}")
+            logger.warning(f"[CTF RATE LIMIT] Cache verification - stored: {len(failed_attempts)}, retrieved: {len(verification)}")
+            logger.warning(f"[CTF RATE LIMIT] Attempts remaining: {max(0, 10 - len(failed_attempts))}")
+            logger.warning(f"[CTF RATE LIMIT] ===============================")
             
             # Check for brute-force attack (10+ failed attempts in 5 minutes)
             if len(failed_attempts) >= 10:
                 # Brute-force detected! Store in session as pending discovery
-                logger.warning(f"[CTF] Rate limiting bug discovered in session {session_key} from IP {client_ip} targeting username {username}")
+                logger.error(f"[CTF RATE LIMIT] 🚨🚨🚨 VULNERABILITY DETECTED! 🚨🚨🚨")
+                logger.error(f"[CTF RATE LIMIT] RATE LIMITING BUG FOUND!")
+                logger.error(f"[CTF RATE LIMIT] {len(failed_attempts)} failed attempts for username '{username}'")
+                logger.error(f"[CTF RATE LIMIT] IP: {client_ip}")
+                logger.error(f"[CTF RATE LIMIT] This should have been blocked by rate limiting!")
                 
                 # Store the bug discovery as pending in the session
                 pending_bugs = request.session.get('pending_bug_discoveries', [])
@@ -629,42 +697,42 @@ class LoginView(APIView):
                     for bug in pending_bugs
                 )
                 
+                bug_data = {
+                    'bug_title': 'Missing Rate Limiting in Login',
+                    'timestamp': current_time,
+                    'target_username': username,
+                    'failed_attempts_count': len(failed_attempts),
+                    'client_ip': client_ip
+                }
+                
                 if not already_pending:
-                    pending_bugs.append({
-                        'bug_title': 'Missing Rate Limiting in Login',
-                        'timestamp': current_time,
-                        'target_username': username,
-                        'failed_attempts_count': len(failed_attempts),
-                        'client_ip': client_ip
-                    })
+                    pending_bugs.append(bug_data)
                     request.session['pending_bug_discoveries'] = pending_bugs
                     request.session.save()
                     
-                    logger.info(f"[CTF] Rate limiting bug stored as pending for session {session_key}")
+                    logger.error(f"[CTF RATE LIMIT] Bug stored as pending for session {session_key[:8] if session_key else 'None'}...")
+                    logger.error(f"[CTF RATE LIMIT] Session pending bugs now: {request.session.get('pending_bug_discoveries', [])}")
+                else:
+                    logger.warning(f"[CTF RATE LIMIT] Bug already pending for this session")
                 
-                # Clear the failed attempts after detection
+                # ALWAYS store in cache as backup (even if already pending in session)
+                rate_limit_cache_key = f"rate_limit_bug_pending_{client_ip}_{username}"
+                cache.set(rate_limit_cache_key, bug_data, 1800)  # 30 minutes TTL
+                logger.error(f"[CTF RATE LIMIT] Bug ALSO stored in cache with key: {rate_limit_cache_key}")
+                
+                # Clear the failed attempts after detection to reset counter
                 cache.delete(cache_key)
                 
-                # Ensure event data is properly structured
-                event_data = {
-                    'bug_type': 'Rate Limiting Bypass',
-                    'description': 'Application lacks proper rate limiting on login attempts',
-                    'message': 'Rate limiting vulnerability detected! No protection against brute force attacks.',
-                    'instruction': 'Now login with correct credentials to claim your points!',
-                    'failed_attempts': len(failed_attempts),
-                    'target_username': username
-                }
-                
-                logger.info(f"[CTF] Sending rate limiting detection response with event_data: {event_data}")
+                logger.error(f"[CTF RATE LIMIT] Sending vulnerability detection response to frontend")
                 
                 # Return response indicating vulnerability detected with dispatch instruction
                 return Response({
                     'error': 'Invalid credentials.',
                     'rate_limiting_bug_detected': True,
-                    'ctf_message': 'Rate limiting vulnerability detected! You have made 10+ failed login attempts.',
-                    'message': 'No rate limiting detected - this is a security vulnerability!',
+                    'ctf_message': f'🚨 Rate limiting vulnerability detected! You made {len(failed_attempts)} failed login attempts.',
+                    'message': 'No rate limiting protection found - this is a critical security vulnerability!',
                     'failed_attempts_count': len(failed_attempts),
-                    'security_hint': 'Now login with correct credentials to gain CTF points for this discovery!',
+                    'security_hint': 'Now login with correct credentials to claim your CTF points!',
                     'vulnerability_type': 'Missing Rate Limiting',
                     'points_pending': 75,
                     'dispatch_event': True,
@@ -683,7 +751,8 @@ class LoginView(APIView):
             return Response({
                 'error': 'Invalid credentials.',
                 'failed_attempts': len(failed_attempts),
-                'attempts_remaining': max(0, 10 - len(failed_attempts))
+                'attempts_remaining': max(0, 10 - len(failed_attempts)),
+                'message': f'Login failed. {max(0, 10 - len(failed_attempts))} attempts remaining before rate limiting should kick in.'
             }, status=status.HTTP_401_UNAUTHORIZED)
     
     def get_client_ip(self, request):
@@ -1301,6 +1370,20 @@ class MessageListView(APIView):
         print(f"[DEBUG] Returning {len(messages)} messages")
         return Response(serializer.data)
 
+    def post(self, request, thread_id):
+        try:
+            thread = ChatThread.objects.get(id=thread_id, participants=request.user)
+        except ChatThread.DoesNotExist:
+            return Response({'error': 'Thread not found or access denied.'}, status=status.HTTP_404_NOT_FOUND)
+
+        if not thread.is_accepted:
+            return Response({'error': 'Thread not accepted yet.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = ChatMessageSerializer(data=request.data, context={'request': request})
+        if serializer.is_valid():
+            serializer.save(sender=request.user, thread=thread)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     def post(self, request, thread_id):
         try:
             thread = ChatThread.objects.get(id=thread_id, participants=request.user)
