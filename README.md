@@ -327,8 +327,8 @@ python manage.py runserver
    - One-time reward per user
 
 ### Planned Vulnerabilities
-- XSS in comment system
-- SQL injection in search functionality
+- ✅ XSS in comment system (75 points)
+- ✅ SQL injection in search functionality (100 points)  
 - Authentication bypass scenarios
 - File upload vulnerabilities
 

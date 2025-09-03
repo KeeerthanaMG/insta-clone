@@ -2,6 +2,10 @@ import React, { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Flag, X } from 'lucide-react'
 
+// Add unique ID generator
+let idCounter = 0
+const generateUniqueId = () => `flag_${Date.now()}_${++idCounter}`
+
 const FlagPopup = ({ flag, bugName, points, message, onClose }) => {
     const [flags, setFlags] = useState([])
 
@@ -44,7 +48,7 @@ const FlagPopup = ({ flag, bugName, points, message, onClose }) => {
     useEffect(() => {
         const handleFlagEvent = (event) => {
             const flagData = {
-                id: Date.now(),
+                id: generateUniqueId(),
                 flag: event.detail.flag,
                 timestamp: new Date(),
             }
@@ -59,7 +63,7 @@ const FlagPopup = ({ flag, bugName, points, message, onClose }) => {
 
         const handleBugFoundEvent = (event) => {
             const bugData = {
-                id: Date.now(),
+                id: generateUniqueId(),
                 message: event.detail.message,
                 points_awarded: event.detail.points_awarded,
                 total_points: event.detail.total_points,

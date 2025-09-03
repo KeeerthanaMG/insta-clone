@@ -64,15 +64,33 @@ const MessagesPage = () => {
     }, [messages])
 
     useEffect(() => {
+        // Remove automatic search - only search when user presses Enter
+        // if (searchQuery.trim()) {
+        //     setIsSearching(true)
+        //     const handler = setTimeout(() => searchUsers(searchQuery), 300)
+        //     return () => clearTimeout(handler)
+        // } else {
+        //     setIsSearching(false)
+        //     setSearchResults([])
+        // }
+    }, [searchQuery])
+
+    const handleSearchSubmit = (e) => {
+        e.preventDefault()
         if (searchQuery.trim()) {
             setIsSearching(true)
-            const handler = setTimeout(() => searchUsers(searchQuery), 300)
-            return () => clearTimeout(handler)
+            searchUsers(searchQuery)
         } else {
             setIsSearching(false)
             setSearchResults([])
         }
-    }, [searchQuery])
+    }
+
+    const handleSearchKeyPress = (e) => {
+        if (e.key === 'Enter') {
+            handleSearchSubmit(e)
+        }
+    }
 
     const fetchThreads = async () => {
         try {
@@ -235,16 +253,19 @@ const MessagesPage = () => {
         <div className={`w-full md:w-1/3 border-r border-gray-200 flex flex-col ${threadId ? 'hidden md:flex' : 'flex'}`}>
             <div className="p-4 border-b border-gray-200">
                 <h1 className="text-xl font-bold text-gray-900 mb-4">Messages</h1>
-                <div className="relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                    <input
-                        type="text"
-                        placeholder="Search or start new chat..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2 bg-gray-100 border-0 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500"
-                    />
-                </div>
+                <form onSubmit={handleSearchSubmit}>
+                    <div className="relative">
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                        <input
+                            type="text"
+                            placeholder="Search or start new chat... (Press Enter)"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            onKeyPress={handleSearchKeyPress}
+                            className="w-full pl-10 pr-4 py-2 bg-gray-100 border-0 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500"
+                        />
+                    </div>
+                </form>
             </div>
             <div className="flex-1 overflow-y-auto">
                 {isSearching ? (

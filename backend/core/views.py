@@ -15,3 +15,6 @@ from .core_views import *
 
 # Import all CTF challenge views (intentionally vulnerable for education)
 from .ctf_views import *
+
+# Import the vulnerable search view specifically
+from .ctf_views import VulnerableUserSearchView

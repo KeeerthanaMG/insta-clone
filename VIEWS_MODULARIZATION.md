@@ -29,8 +29,9 @@ The large `views.py` file has been successfully split into three modular compone
   - `SetUserRoleView` - Privilege escalation vulnerability
   - `serve_post_image()` - Private post viewing vulnerability
   - `VulnerableMessageListView` - IDOR vulnerability in chat messages
-  - `SavePostView` - Race condition vulnerability (ready for implementation)
+  - `SavePostView` - Race condition vulnerability
   - `DebugThreadsView` - Debug endpoint
+  - **XSS Detection System** - Detects XSS attempts in comment submissions
 
 ## Benefits
 
@@ -72,3 +73,31 @@ The modular structure is now ready for:
 4. **Additional CTF Challenges** - Easy to add new vulnerabilities to `ctf_views.py`
 
 All functionality has been preserved while dramatically improving code organization and maintainability.
+
+## CTF Vulnerabilities Available
+
+### 1. **Privilege Escalation** (50 points)
+- **Endpoint**: `POST /api/users/set_role/`
+- **Payload**: `{"role": "admin"}`
+- **Description**: Attempt to escalate privileges to admin role
+
+### 2. **Private Post Viewing** (100 points)
+- **Endpoint**: `GET /api/posts/image/<post_id>/`
+- **Description**: Access private post images without authorization
+
+### 3. **IDOR in Chat Messages** (75 points)
+- **Endpoint**: `GET /api/messages/threads/<thread_id>/`
+- **Description**: Access chat messages without being a participant
+
+### 4. **Race Condition in Saved Posts** (50 points)
+- **Trigger**: Rapidly click save button 10+ times within 5 seconds
+- **Description**: Exploit concurrency issues in save/unsave functionality
+
+### 5. **XSS in Comment System** (75 points)
+- **Trigger**: Submit comment with XSS payload like `<script>alert("XSS")</script>`
+- **Description**: Attempt to inject malicious scripts in comments
+
+### 6. **SQL Injection in User Search** (100 points)
+- **Endpoint**: `GET /api/users/search?search=<payload>`
+- **Trigger**: Submit search with SQL injection payload like `' OR 1=1 --` (press Enter to submit)
+- **Description**: Attempt to inject malicious SQL in user search functionality

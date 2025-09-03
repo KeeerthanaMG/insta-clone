@@ -303,11 +303,53 @@ class CommentViewSet(viewsets.ModelViewSet):
 
     def create(self, request, *args, **kwargs):
         """
-        Create a new comment with proper validation.
+        Create a new comment with XSS detection and proper validation.
         """
+        from .ctf_views import trigger_bug_found, detect_xss_attempt, sanitize_comment_text
+        
         serializer = self.get_serializer(data=request.data)
         
         if serializer.is_valid():
+            comment_text = serializer.validated_data.get('text', '')
+            
+            # Check for XSS attempts BEFORE creating the comment
+            if detect_xss_attempt(comment_text):
+                # XSS attempt detected! Trigger CTF bug detection
+                bug_response = trigger_bug_found(
+                    user=request.user,
+                    bug_title="XSS in Comment System",
+                    points=75
+                )
+                
+                if bug_response['success']:
+                    # First time finding this bug - return CTF response
+                    return Response({
+                        'vulnerability_detected': True,
+                        'ctf_message': bug_response['message'],
+                        'ctf_points_awarded': bug_response['points_awarded'],
+                        'ctf_total_points': bug_response['total_points'],
+                        'flag': f"CTF{{xss_comment_system_{request.user.id}}}",
+                        'description': 'You discovered an XSS vulnerability in the comment system! The malicious script was detected and neutralized.',
+                        'bug_type': 'Cross-Site Scripting (XSS)',
+                        'attempted_payload': comment_text[:100] + '...' if len(comment_text) > 100 else comment_text
+                    }, status=status.HTTP_200_OK)
+                else:
+                    # Already found this bug
+                    return Response({
+                        'vulnerability_detected': True,
+                        'ctf_message': bug_response['message'],
+                        'ctf_points_awarded': 0,
+                        'ctf_total_points': bug_response['total_points'],
+                        'flag': f"CTF{{xss_comment_system_{request.user.id}}}",
+                        'description': 'XSS attempt detected, but you already found this vulnerability.',
+                        'bug_type': 'Cross-Site Scripting (XSS)',
+                        'attempted_payload': comment_text[:100] + '...' if len(comment_text) > 100 else comment_text
+                    }, status=status.HTTP_200_OK)
+            
+            # Sanitize the comment text to prevent actual XSS execution
+            sanitized_text = sanitize_comment_text(comment_text)
+            serializer.validated_data['text'] = sanitized_text
+            
             # Validate that the post exists
             post_id = serializer.validated_data.get('post')
             try:
@@ -318,7 +360,7 @@ class CommentViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_404_NOT_FOUND
                 )
             
-            # Create the comment
+            # Create the comment with sanitized content
             comment = serializer.save(user=request.user)
             
             # Create notification for post owner

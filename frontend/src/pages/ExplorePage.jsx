@@ -12,11 +12,12 @@ const ExplorePage = () => {
     const navigate = useNavigate()
 
     useEffect(() => {
-        if (searchQuery.trim()) {
-            searchUsers()
-        } else {
-            setUsers([])
-        }
+        // Remove automatic search on keystroke - only search when explicitly triggered
+        // if (searchQuery.trim()) {
+        //     searchUsers()
+        // } else {
+        //     setUsers([])
+        // }
     }, [searchQuery])
 
     const searchUsers = async () => {
@@ -28,6 +29,21 @@ const ExplorePage = () => {
             setError('Failed to search users')
         } finally {
             setLoading(false)
+        }
+    }
+
+    const handleSearch = (e) => {
+        e.preventDefault()
+        if (searchQuery.trim()) {
+            searchUsers()
+        } else {
+            setUsers([])
+        }
+    }
+
+    const handleKeyPress = (e) => {
+        if (e.key === 'Enter') {
+            handleSearch(e)
         }
     }
 
@@ -65,16 +81,19 @@ const ExplorePage = () => {
                 <h1 className="text-2xl font-bold text-gray-900 mb-6">Explore</h1>
 
                 {/* Search bar */}
-                <div className="relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                    <input
-                        type="text"
-                        placeholder="Search for users..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full pl-10 pr-4 py-3 bg-gray-100 border-0 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-500"
-                    />
-                </div>
+                <form onSubmit={handleSearch}>
+                    <div className="relative">
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                        <input
+                            type="text"
+                            placeholder="Search for users... (Press Enter to search)"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            onKeyPress={handleKeyPress}
+                            className="w-full pl-10 pr-4 py-3 bg-gray-100 border-0 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-500"
+                        />
+                    </div>
+                </form>
             </div>
 
             {error && (

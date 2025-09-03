@@ -26,7 +26,8 @@ urlpatterns = [
     path('users/set_role/', views.SetUserRoleView.as_view(), name='set-user-role'),
     path('users/<str:username>/', views.UserProfileView.as_view(), name='user-profile'),
     path('users/<str:username>/posts/', views.UserPostsView.as_view(), name='user-posts'),
-    path('users/', views.UserSearchView.as_view(), name='user-search'),
+    # VULNERABLE: SQL injection endpoint for CTF
+    path('users/', views.VulnerableUserSearchView.as_view(), name='user-search'),
     
     # Follow/Unfollow endpoints
     path('users/<int:user_id>/follow/', views.FollowUserView.as_view(), name='follow-user'),

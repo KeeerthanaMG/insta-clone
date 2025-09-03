@@ -24,6 +24,6 @@ urlpatterns = [
     path("api/", include("core.urls")),
 ]
 
-# Serve media files during development
+# Serve media files during development and CTF challenges
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

@@ -104,13 +104,13 @@ const CommentsModal = ({ post, isOpen, onClose }) => {
                         comments.map((comment) => (
                             <div key={comment.id} className="flex space-x-3">
                                 <Avatar
-                                    src={comment.user.profile_picture}
-                                    alt={comment.user.username}
+                                    src={comment.user?.profile_picture}
+                                    alt={comment.user?.username || 'Unknown User'}
                                     size="sm"
                                 />
                                 <div className="flex-1">
                                     <p className="text-sm">
-                                        <span className="font-semibold">{comment.user.username}</span>
+                                        <span className="font-semibold">{comment.user?.username || 'Unknown User'}</span>
                                         <span className="ml-2 text-gray-700">{comment.text}</span>
                                     </p>
                                     <p className="text-xs text-gray-500 mt-1">

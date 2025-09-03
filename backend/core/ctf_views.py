@@ -5,6 +5,7 @@ from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django.shortcuts import get_object_or_404
 from django.db import transaction
+from django.db.models import F  # Add this import
 from django.contrib.auth import get_user_model, authenticate, login, logout
 from rest_framework.views import APIView
 from rest_framework.authtoken.views import ObtainAuthToken
@@ -36,6 +37,7 @@ def trigger_bug_found(user, bug_title, points=50):
     """
     Helper function to handle bug discovery.
     Awards points only if this is the first time the user found this bug.
+    Fixed to prevent double counting.
     """
     try:
         # Get or create the bug entry
@@ -48,38 +50,46 @@ def trigger_bug_found(user, bug_title, points=50):
             }
         )
         
-        # Check if user already found this bug
-        bug_solve, created = BugSolve.objects.get_or_create(
-            user=user,
-            bug=bug
-        )
-        
-        if created:
-            # First time finding this bug - award points
-            user.points += points
-            user.bugs_solved += 1
-            user.save()
+        # Check if user already found this bug (atomic operation to prevent race conditions)
+        with transaction.atomic():
+            bug_solve, created = BugSolve.objects.get_or_create(
+                user=user,
+                bug=bug
+            )
             
-            # Update or create leaderboard entry
-            leaderboard, _ = Leaderboard.objects.get_or_create(user=user)
-            leaderboard.update_stats()
-            
-            return {
-                'success': True,
-                'message': f'{bug_title} bug found! +{points} points',
-                'points_awarded': points,
-                'total_points': user.points,
-                'flag': f'CTF{{privilege_escalation_discovered_{user.id}}}'
-            }
-        else:
-            # Already found this bug
-            return {
-                'success': False,
-                'message': 'You have already found this bug. No extra points.',
-                'points_awarded': 0,
-                'total_points': user.points
-            }
-            
+            if created:
+                # First time finding this bug - update user stats in single transaction
+                User.objects.filter(id=user.id).update(
+                    points=F('points') + points,
+                    bugs_solved=F('bugs_solved') + 1
+                )
+                
+                # Refresh user object to get updated values
+                user.refresh_from_db()
+                
+                # Update or create leaderboard entry
+                leaderboard, _ = Leaderboard.objects.get_or_create(user=user)
+                leaderboard.update_stats()
+                
+                logger.info(f"[CTF] Bug '{bug_title}' solved by user {user.id} for {points} points")
+                
+                return {
+                    'success': True,
+                    'message': f'{bug_title} bug found! +{points} points',
+                    'points_awarded': points,
+                    'total_points': user.points,
+                    'flag': f'CTF{{{bug_title.lower().replace(" ", "_")}_{user.id}}}'
+                }
+            else:
+                # Already found this bug
+                logger.info(f"[CTF] User {user.id} attempted to re-solve bug '{bug_title}'")
+                return {
+                    'success': False,
+                    'message': 'You have already found this bug. No extra points.',
+                    'points_awarded': 0,
+                    'total_points': user.points
+                }
+                
     except Exception as e:
         logger.error(f"Error in trigger_bug_found: {e}")
         return {
@@ -545,3 +555,280 @@ class UserPrivatePostsView(APIView):
             'results': serializer.data,
             'count': posts.count()
         }, status=status.HTTP_200_OK)
+
+
+def detect_xss_attempt(text):
+    """
+    Detect XSS attempts in user input without executing them.
+    Returns True if XSS patterns are found.
+    """
+    import re
+    
+    # Common XSS patterns to detect
+    xss_patterns = [
+        r'<script[^>]*>.*?</script>',  # Script tags
+        r'<script[^>]*>',             # Opening script tags
+        r'javascript:',               # JavaScript protocol
+        r'on\w+\s*=',                # Event handlers (onclick, onload, etc.)
+        r'<iframe[^>]*>',             # Iframe tags
+        r'<object[^>]*>',             # Object tags
+        r'<embed[^>]*>',              # Embed tags
+        r'<svg[^>]*>.*?</svg>',       # SVG with potential scripts
+        r'<img[^>]*on\w+',            # Image with event handlers
+        r'eval\s*\(',                 # eval() function
+        r'alert\s*\(',                # alert() function
+        r'confirm\s*\(',              # confirm() function
+        r'prompt\s*\(',               # prompt() function
+    ]
+    
+    # Check for XSS patterns (case-insensitive)
+    for pattern in xss_patterns:
+        if re.search(pattern, text, re.IGNORECASE | re.DOTALL):
+            return True
+    
+    return False
+
+
+def sanitize_comment_text(text):
+    """
+    Sanitize comment text by removing dangerous HTML/JS while preserving safe content.
+    """
+    import html
+    import re
+    
+    # HTML encode the text to prevent XSS execution
+    sanitized = html.escape(text)
+    
+    # Remove any remaining script-like patterns
+    sanitized = re.sub(r'<script[^>]*>.*?</script>', '[REMOVED: SCRIPT]', sanitized, flags=re.IGNORECASE | re.DOTALL)
+    sanitized = re.sub(r'javascript:', '[REMOVED: JAVASCRIPT]', sanitized, flags=re.IGNORECASE)
+    sanitized = re.sub(r'on\w+\s*=\s*["\'][^"\']*["\']', '[REMOVED: EVENT]', sanitized, flags=re.IGNORECASE)
+    
+    return sanitized
+
+
+def detect_sql_injection_attempt(search_query):
+    """
+    Detect SQL injection attempts in user input without executing them.
+    Returns True if SQL injection patterns are found.
+    """
+    import re
+    
+    # Normalize the input for better pattern matching
+    normalized_query = search_query.strip().upper()
+    
+    # Common SQL injection patterns to detect
+    sql_injection_patterns = [
+        # Basic SQL injection patterns with quotes
+        r"'\s*(OR|AND)\s+\d+\s*=\s*\d+",           # ' OR 1=1, ' AND 1=1
+        r"'\s*(OR|AND)\s+\w+\s*=\s*\w+",           # ' OR user=user
+        r"'\s*(OR|AND)\s+'\w+'\s*=\s*'\w+'",       # ' OR 'a'='a'
+        r"'\s*(OR|AND)\s+'1'\s*=\s*'1'",           # ' OR '1'='1'
+        
+        # SQL commands that could be dangerous (with or without quotes/semicolons)
+        r"(^|\s|'|;)\s*DROP\s+TABLE",              # DROP TABLE (standalone or after delimiter)
+        r"(^|\s|'|;)\s*DELETE\s+FROM",             # DELETE FROM
+        r"(^|\s|'|;)\s*INSERT\s+INTO",             # INSERT INTO
+        r"(^|\s|'|;)\s*UPDATE\s+\w+\s+SET",        # UPDATE table SET
+        r"(^|\s|'|;)\s*ALTER\s+TABLE",             # ALTER TABLE
+        r"(^|\s|'|;)\s*CREATE\s+TABLE",            # CREATE TABLE
+        r"(^|\s|'|;)\s*TRUNCATE\s+TABLE",          # TRUNCATE TABLE
+        
+        # UNION-based injection
+        r"'\s*UNION\s+SELECT",                      # ' UNION SELECT
+        r"(^|\s)\s*UNION\s+SELECT",                 # UNION SELECT (standalone)
+        
+        # Comment-based injection
+        r"'\s*--",                                  # SQL comment --
+        r"'\s*/\*.*?\*/",                          # SQL comment /* */
+        r"'\s*#",                                  # MySQL comment #
+        r"--\s",                                   # SQL comment (standalone)
+        r"/\*.*?\*/",                              # SQL comment block (standalone)
+        
+        # Function-based injection
+        r"\bEXEC\s*\(",                            # EXEC function
+        r"\bsp_\w+",                               # Stored procedures
+        r"xp_cmdshell",                            # Command execution
+        r"INTO\s+OUTFILE",                         # File operations
+        r"LOAD_FILE\s*\(",                         # File reading
+        r"BENCHMARK\s*\(",                         # Time-based injection
+        r"SLEEP\s*\(",                             # Time-based injection
+        r"WAITFOR\s+DELAY",                        # SQL Server delay
+        r"pg_sleep",                               # PostgreSQL sleep
+        r"EXTRACTVALUE\s*\(",                      # Error-based injection
+        r"UPDATEXML\s*\(",                         # Error-based injection
+        
+        # Advanced patterns
+        r"'\s*(AND|OR)\s+\w+\s+LIKE\s+",           # LIKE-based injection
+        r"'\s*(AND|OR)\s+SUBSTRING\s*\(",          # Substring-based injection
+        r"'\s*(AND|OR)\s+ASCII\s*\(",              # ASCII-based injection
+        r"'\s*(AND|OR)\s+CHAR\s*\(",               # Character-based injection
+        r"'\s*(AND|OR)\s+CONCAT\s*\(",             # Concatenation-based injection
+        
+        # Database-specific functions
+        r"@@version",                              # SQL Server version
+        r"version\s*\(\s*\)",                      # MySQL/PostgreSQL version
+        r"user\s*\(\s*\)",                         # Current user function
+        r"database\s*\(\s*\)",                     # Current database function
+        r"information_schema",                     # SQL Server system objects
+        r"sysobjects",                             # SQL Server system users
+        
+        # Hex/URL encoded patterns
+        r"0x[0-9a-fA-F]+",                         # Hexadecimal values
+        r"%27",                                    # URL encoded single quote
+        r"%3B",                                    # URL encoded semicolon
+        r"%2D%2D",                                 # URL encoded --
+        
+        # Boolean-based blind injection
+        r"'\s*(AND|OR)\s+\d+\s*[<>]\s*\d+",       # ' AND 1>0
+        r"'\s*(AND|OR)\s+\w+\s+IS\s+(NOT\s+)?NULL", # ' AND username IS NULL
+        
+        # Time-based blind injection patterns
+        r"IF\s*\(.+SLEEP\s*\(",                    # IF condition with SLEEP
+        r"CASE\s+WHEN.+THEN\s+SLEEP",             # CASE WHEN with SLEEP
+        
+        # Error-based injection patterns
+        r"'\s*AND\s+\(\s*SELECT\s+COUNT\s*\(\s*\*\s*\)", # Error-based count injection
+        r"'\s*AND\s+EXP\s*\(\s*~\s*\(",           # MySQL error-based with EXP
+        
+        # Stacked queries
+        r";\s*EXEC\s*\(",                          # Stacked execution
+        r";\s*SELECT\s+",                          # Stacked SELECT
+        r";\s*INSERT\s+",                          # Stacked INSERT
+        r";\s*UPDATE\s+",                          # Stacked UPDATE
+        r";\s*DELETE\s+",                          # Stacked DELETE
+    ]
+    
+    # Check for SQL injection patterns (case-insensitive)
+    for pattern in sql_injection_patterns:
+        if re.search(pattern, search_query, re.IGNORECASE | re.DOTALL):
+            return True
+    
+    # Additional check for common standalone SQL keywords that shouldn't appear in usernames
+    dangerous_keywords = [
+        'DROP TABLE', 'DELETE FROM', 'UPDATE SET', 'INSERT INTO', 'ALTER TABLE',
+        'CREATE TABLE', 'TRUNCATE TABLE', 'UNION SELECT', 'EXEC(', 'XP_CMDSHELL',
+        'LOAD_FILE(', 'INTO OUTFILE', 'BENCHMARK(', 'SLEEP(', 'WAITFOR DELAY',
+        'PG_SLEEP', 'EXTRACTVALUE(', 'UPDATEXML('
+    ]
+    
+    for keyword in dangerous_keywords:
+        if keyword in normalized_query:
+            return True
+    
+    return False
+
+
+class VulnerableUserSearchView(APIView):
+    """
+    🚨 VULNERABLE ENDPOINT: SQL Injection in User Search
+    
+    This endpoint is intentionally vulnerable to SQL injection for educational purposes.
+    It detects SQL injection attempts and awards CTF points instead of executing them.
+    
+    Expected exploit attempt:
+    GET /api/users/search?search=' OR 1=1 --
+    """
+    permission_classes = [AllowAny]
+    
+    def get(self, request):
+        search_query = request.query_params.get('search', '')
+        
+        if not search_query:
+            return Response({
+                'results': [],
+                'count': 0,
+                'message': 'Search query is required.'
+            }, status=status.HTTP_200_OK)
+        
+        # Check for SQL injection attempts BEFORE executing any queries
+        if detect_sql_injection_attempt(search_query):
+            # SQL injection attempt detected!
+            logger.warning(f"[CTF] SQL injection attempt detected from user {request.user.id if request.user.is_authenticated else 'Anonymous'}: {search_query}")
+            
+            if request.user.is_authenticated:
+                # Trigger CTF bug detection
+                bug_response = trigger_bug_found(
+                    user=request.user,
+                    bug_title="SQL Injection in User Search",
+                    points=100  # High points for SQL injection
+                )
+                
+                if bug_response['success']:
+                    # First time finding this bug - return CTF response
+                    return Response({
+                        'vulnerability_detected': True,
+                        'ctf_message': bug_response['message'],
+                        'ctf_points_awarded': bug_response['points_awarded'],
+                        'ctf_total_points': bug_response['total_points'],
+                        'flag': f"CTF{{sql_injection_user_search_{request.user.id}}}",
+                        'description': 'You discovered a SQL injection vulnerability in the user search! This could allow attackers to access or manipulate database data.',
+                        'bug_type': 'SQL Injection',
+                        'attempted_payload': search_query[:100] + '...' if len(search_query) > 100 else search_query,
+                        'results': [],
+                        'count': 0
+                    }, status=status.HTTP_200_OK)
+                else:
+                    # Already found this bug
+                    return Response({
+                        'vulnerability_detected': True,
+                        'ctf_message': bug_response['message'],
+                        'ctf_points_awarded': 0,
+                        'ctf_total_points': bug_response['total_points'],
+                        'flag': f"CTF{{sql_injection_user_search_{request.user.id}}}",
+                        'description': 'SQL injection attempt detected, but you already found this vulnerability.',
+                        'bug_type': 'SQL Injection',
+                        'attempted_payload': search_query[:100] + '...' if len(search_query) > 100 else search_query,
+                        'results': [],
+                        'count': 0
+                    }, status=status.HTTP_200_OK)
+            else:
+                # Anonymous user attempted SQL injection
+                return Response({
+                    'error': 'Invalid search query. Please login to continue.',
+                    'message': 'SQL injection attempts are logged.',
+                    'results': [],
+                    'count': 0
+                }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Normal search functionality (safe parameterized query)
+        try:
+            # Use Django ORM for safe querying (prevents actual SQL injection)
+            users = User.objects.filter(
+                username__icontains=search_query
+            ).exclude(
+                id=request.user.id if request.user.is_authenticated else None
+            )[:10]
+            
+            results = []
+            for user in users:
+                is_following = False
+                if request.user.is_authenticated:
+                    is_following = Follow.objects.filter(
+                        follower=request.user, 
+                        following=user
+                    ).exists()
+                
+                results.append({
+                    'id': user.id,
+                    'username': user.username,
+                    'bio': user.bio,
+                    'profile_picture': user.profile_picture.url if user.profile_picture else None,
+                    'followers_count': user.followers.count(),
+                    'following_count': user.following.count(),
+                    'is_following': is_following
+                })
+            
+            return Response({
+                'results': results,
+                'count': len(results),
+                'search_query': search_query
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            logger.error(f"Error in user search: {e}")
+            return Response({
+                'error': 'Search failed. Please try again.',
+                'results': [],
+                'count': 0
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
