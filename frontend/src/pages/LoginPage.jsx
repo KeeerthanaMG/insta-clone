@@ -1,5 +1,5 @@
-import React, { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import React, { useState, useEffect } from 'react'
+import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { Camera } from 'lucide-react'
 import { authAPI } from '../lib/api'
 
@@ -13,6 +13,16 @@ const LoginPage = ({ onLogin }) => {
     const [rateLimitingDetected, setRateLimitingDetected] = useState(false)
     const [loading, setLoading] = useState(false)
     const navigate = useNavigate()
+    const location = useLocation()
+
+    useEffect(() => {
+        // Check for success message from navigation state (e.g., from password reset)
+        if (location.state?.message) {
+            setSuccess(location.state.message)
+            // Clear the state to prevent showing the message on page refresh
+            navigate(location.pathname, { replace: true })
+        }
+    }, [location, navigate])
 
     const handleChange = (e) => {
         setFormData({
@@ -245,13 +255,20 @@ const LoginPage = ({ onLogin }) => {
                         </button>
                     </div>
 
-                    <div className="text-center">
-                        <span className="text-sm text-gray-600">
-                            Don't have an account?{' '}
-                            <Link to="/register" className="font-medium text-pink-600 hover:text-pink-500">
-                                Sign up
+                    <div className="text-center space-y-2">
+                        <div>
+                            <Link to="/forgot-password" className="text-sm text-pink-600 hover:text-pink-500">
+                                Forgot your password?
                             </Link>
-                        </span>
+                        </div>
+                        <div>
+                            <span className="text-sm text-gray-600">
+                                Don't have an account?{' '}
+                                <Link to="/register" className="font-medium text-pink-600 hover:text-pink-500">
+                                    Sign up
+                                </Link>
+                            </span>
+                        </div>
                     </div>
                 </form>
             </div>

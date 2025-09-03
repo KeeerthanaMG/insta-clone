@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react'
 import MainLayout from './layouts/MainLayout'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
+import ForgotPassword from './components/ForgotPassword'
+import ResetPassword from './components/ResetPassword'
 import FeedPage from './pages/FeedPage'
 import ExplorePage from './pages/ExplorePage'
 import CreatePostPage from './pages/CreatePostPage'
@@ -57,6 +59,18 @@ function App() {
         <Route path="/register" element={
           <PublicRoute>
             <RegisterPage />
+          </PublicRoute>
+        } />
+
+        <Route path="/forgot-password" element={
+          <PublicRoute>
+            <ForgotPassword />
+          </PublicRoute>
+        } />
+
+        <Route path="/reset-password/:uidb64/:token" element={
+          <PublicRoute>
+            <ResetPassword />
           </PublicRoute>
         } />
 

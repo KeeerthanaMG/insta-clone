@@ -161,12 +161,19 @@ const Login = ({ onLogin }) => {
                     </button>
                 </form>
 
-                <p className="mt-4 text-center text-sm text-gray-600">
-                    Don't have an account?{' '}
-                    <a href="/register" className="text-blue-600 hover:underline">
-                        Register here
-                    </a>
-                </p>
+                <div className="mt-4 text-center space-y-2">
+                    <p className="text-sm text-gray-600">
+                        <a href="/forgot-password" className="text-blue-600 hover:underline">
+                            Forgot your password?
+                        </a>
+                    </p>
+                    <p className="text-sm text-gray-600">
+                        Don't have an account?{' '}
+                        <a href="/register" className="text-blue-600 hover:underline">
+                            Register here
+                        </a>
+                    </p>
+                </div>
             </div>
         </div>
     )

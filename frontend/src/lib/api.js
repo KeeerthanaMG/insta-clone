@@ -130,6 +130,8 @@ export const authAPI = {
     login: (credentials) => api.post('/auth/login/', credentials),
     register: (userData) => api.post('/auth/register/', userData),
     logout: () => api.post('/auth/logout/'),
+    forgotPassword: (data) => api.post('/auth/forgot-password/', data),
+    resetPassword: (uidb64, token, data) => api.post(`/auth/reset-password/${uidb64}/${token}/`, data),
 }
 
 export const postsAPI = {
