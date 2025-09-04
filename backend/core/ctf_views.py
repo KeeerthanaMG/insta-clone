@@ -14,8 +14,11 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from django.db.models import Q
 from django.http import HttpResponse, Http404
+from django.core.cache import cache
 import logging
 import time
+import secrets
+import base64
 from collections import defaultdict
 
 logger = logging.getLogger("ctf_debug")
@@ -1011,3 +1014,310 @@ class VulnerableUserSearchView(APIView):
                 'results': [],
                 'count': 0
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ForgotPasswordView(APIView):
+    """
+    🚨 VULNERABLE ENDPOINT: Predictable Password Reset Tokens
+    
+    This endpoint generates password reset tokens that contain predictable patterns.
+    The token format is: {random_id}-{base64_encoded_username}
+    
+    While the random_id part is secure, the username part makes tokens predictable
+    if an attacker knows the username, allowing them to potentially reset other users' passwords.
+    
+    Expected exploit:
+    1. Request password reset for victim's email
+    2. Extract the token format from your own reset email
+    3. Generate a token for the victim by encoding their username
+    4. Use the crafted token to reset victim's password
+    """
+    permission_classes = [AllowAny]
+    
+    def post(self, request):
+        email = request.data.get('email', '').strip().lower()
+        
+        if not email:
+            return Response({
+                'error': 'Email is required.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            # Don't reveal if email exists - return success anyway for security
+            return Response({
+                'message': 'If an account with this email exists, a password reset link has been sent.',
+                'email': email
+            }, status=status.HTTP_200_OK)
+        
+        # VULNERABILITY: Generate predictable token
+        # Format: {random_id}-{base64_encoded_username}
+        random_id = secrets.token_urlsafe(16)  # This part is secure
+        username_b64 = base64.b64encode(user.username.encode()).decode()  # This part is predictable!
+        
+        # The full token combines both parts
+        reset_token = f"{random_id}-{username_b64}"
+        
+        # Store the token in cache for 1 hour
+        cache_key = f"password_reset_{reset_token}"
+        cache.set(cache_key, {
+            'user_id': user.id,
+            'username': user.username,
+            'email': user.email,
+            'timestamp': time.time()
+        }, 3600)  # 1 hour expiry
+        
+        # Generate reset URL
+        reset_url = f"http://localhost:5173/reset-password/{username_b64}/{reset_token}"
+        
+        # Send email (print to console in development)
+        try:
+            print(f"\n🔑 PASSWORD RESET LINK for {user.email}:")
+            print(f"📧 User: {user.username} ({user.email})")
+            print(f"🔗 Reset Link: {reset_url}")
+            print(f"🚨 CTF NOTE: Token format is {random_id}-{username_b64}")
+            print(f"⏰ Generated at: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+            print("=" * 60)
+            
+            logger.info(f"[CTF] Password reset email sent to {email} with token: {reset_token}")
+            
+        except Exception as e:
+            logger.error(f"Error sending password reset email: {e}")
+            return Response({
+                'error': 'Failed to send reset email. Please try again later.'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        return Response({
+            'message': 'If an account with this email exists, a password reset link has been sent.',
+            'email': email,
+            'debug_info': {
+                'reset_url': reset_url,
+                'token': reset_token,
+                'note': 'Debug info visible in development mode only'
+            }
+        }, status=status.HTTP_200_OK)
+
+
+class ResetPasswordView(APIView):
+    """
+    🚨 VULNERABLE ENDPOINT: Handles password reset with predictable token detection
+    
+    This endpoint processes password reset requests and detects when someone
+    has exploited the predictable token vulnerability.
+    
+    CTF Detection Logic:
+    1. Extract username from the URL parameter (uidb64)
+    2. Extract username from the token (base64 part after the dash)
+    3. If they don't match, someone crafted a token - trigger CTF bug detection
+    4. Award points for discovering the predictable token vulnerability
+    """
+    permission_classes = [AllowAny]
+    
+    def post(self, request, uidb64, token):
+        new_password = request.data.get('password', '').strip()
+        
+        if not new_password:
+            return Response({
+                'error': 'New password is required.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        if len(new_password) < 6:
+            return Response({
+                'error': 'Password must be at least 6 characters long.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            # Decode the username from URL parameter
+            url_username = base64.b64decode(uidb64.encode()).decode()
+        except Exception:
+            return Response({
+                'error': 'Invalid reset link format.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Check if token exists in cache first
+        cache_key = f"password_reset_{token}"
+        reset_data = cache.get(cache_key)
+        
+        if not reset_data:
+            return Response({
+                'error': 'Invalid or expired reset token.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Extract username from token (predictable part)
+        try:
+            if '-' not in token:
+                logger.warning("[CTF] Invalid token format detected!")
+                return Response({
+                    'error': 'Invalid token format.',
+                    'vulnerability_detected': True,
+                    'ctf_message': 'Invalid password reset token format detected! Login to claim your points.',
+                    'require_login': True
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            token_parts = token.split('-', 1)  # Split on first dash only
+            random_part = token_parts[0]
+            username_part = token_parts[1]
+            
+            # Decode the username from token
+            token_username = base64.b64decode(username_part.encode()).decode()
+            
+        except Exception as e:
+            logger.error(f"Error decoding token username: {e}")
+            return Response({
+                'error': 'Invalid token format.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        logger.info(f"[CTF] Password reset attempt - URL username: {url_username}, Token username: {token_username}, Cache username: {reset_data.get('username')}")
+        
+        # CTF BUG DETECTION: Check if usernames don't match (token was crafted)
+        if url_username != token_username:
+            logger.warning(f"[CTF] PREDICTABLE TOKEN VULNERABILITY DETECTED!")
+            logger.warning(f"[CTF] URL username: {url_username}, Token username: {token_username}")
+            logger.warning(f"[CTF] Someone crafted a token to reset {url_username}'s password using {token_username}'s token pattern!")
+            
+            # Try to find the user who's attempting this exploit
+            current_user = None
+            
+            # Check if there's an authenticated user making this request
+            if hasattr(request, 'user') and request.user.is_authenticated:
+                current_user = request.user
+                logger.info(f"[CTF] Authenticated user {current_user.username} (ID: {current_user.id}) found the predictable token bug")
+            else:
+                # If no authenticated user, try to find the user who originally requested the reset
+                try:
+                    current_user = User.objects.get(username=token_username)
+                    logger.info(f"[CTF] Assuming user {current_user.username} found the bug based on token pattern")
+                except User.DoesNotExist:
+                    logger.error(f"[CTF] Could not identify user who found the bug")
+                    return Response({
+                        'error': 'Could not verify the exploit attempt. Please login first.',
+                        'vulnerability_detected': True,
+                        'message': 'Predictable token vulnerability detected but could not award points.',
+                        'exploit_details': {
+                            'url_username': url_username,
+                            'token_username': token_username,
+                            'note': 'Token was crafted to target a different user'
+                        }
+                    }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Trigger CTF bug detection
+            bug_response = trigger_bug_found(
+                user=current_user,
+                bug_title="Predictable Password Reset Token",
+                points=100
+            )
+            
+            if bug_response['success']:
+                # First time finding this bug
+                return Response({
+                    'vulnerability_detected': True,
+                    'ctf_message': bug_response['message'],
+                    'ctf_points_awarded': bug_response['points_awarded'],
+                    'ctf_total_points': bug_response['total_points'],
+                    'flag': f"CTF{{predictable_password_reset_token_{current_user.id}}}",
+                    'description': 'You discovered a predictable password reset token vulnerability! The token contains the base64-encoded username, making it possible to craft tokens for other users.',
+                    'bug_type': 'Predictable Token Generation',
+                    'exploit_details': {
+                        'target_username': url_username,
+                        'crafted_from_username': token_username,
+                        'token_format': 'random_id-base64_username',
+                        'security_impact': 'Attackers can reset passwords for any known username'
+                    },
+                    'message': 'Security vulnerability discovered! Token exploitation prevented.'
+                }, status=status.HTTP_200_OK)
+            else:
+                # Already found this bug
+                return Response({
+                    'vulnerability_detected': True,
+                    'ctf_message': bug_response['message'],
+                    'ctf_points_awarded': 0,
+                    'ctf_total_points': bug_response['total_points'],
+                    'flag': f"CTF{{predictable_password_reset_token_{current_user.id}}}",
+                    'description': 'Predictable token vulnerability detected, but you already found this bug.',
+                    'bug_type': 'Predictable Token Generation',
+                    'message': 'You already discovered this vulnerability.'
+                }, status=status.HTTP_200_OK)
+        
+        # Normal password reset flow (usernames match)
+        # Verify the username from the URL matches the one stored with the token in cache
+        if reset_data.get('username') != url_username:
+            logger.warning(f"[CTF] Token validation failed. URL username '{url_username}' does not match cached username '{reset_data.get('username')}'.")
+            return Response({
+                'error': 'Token validation failed. Mismatch in user data.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Find the user and reset password
+        try:
+            user = User.objects.get(id=reset_data['user_id'])
+            user.set_password(new_password)
+            user.save()
+            
+            # Clear the token from cache
+            cache.delete(cache_key)
+            
+            logger.info(f"[CTF] Password successfully reset for user {user.username}")
+            
+            return Response({
+                'message': 'Password has been successfully reset. You can now login with your new password.',
+                'username': user.username
+            }, status=status.HTTP_200_OK)
+            
+        except User.DoesNotExist:
+            logger.error(f"[CTF] User not found during password reset: ID {reset_data['user_id']}")
+            return Response({
+                'error': 'User account not found.'
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.error(f"[CTF] Error resetting password: {e}")
+            return Response({
+                'error': 'Failed to reset password. Please try again.'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    def get(self, request, uidb64, token):
+        """
+        Validate reset token without actually resetting password.
+        Used by frontend to check if reset link is valid.
+        """
+        # Check for invalid token format FIRST
+        if '-' not in token:
+            logger.warning("[CTF] Invalid token format detected!")
+            return Response({
+                'error': 'Invalid token format.',
+                'vulnerability_detected': True,
+                'ctf_message': 'Invalid password reset token format detected! Login to claim your points.',
+                'require_login': True
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            # Decode the username from URL parameter
+            url_username = base64.b64decode(uidb64.encode()).decode()
+        except Exception:
+            return Response({
+                'error': 'Invalid reset link format.',
+                'valid': False
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Check if token exists in cache
+        cache_key = f"password_reset_{token}"
+        reset_data = cache.get(cache_key)
+        
+        if not reset_data:
+            return Response({
+                'error': 'Invalid or expired reset token.',
+                'valid': False
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Verify the username from the URL (uidb64) matches the username in the cached data
+        if reset_data.get('username') != url_username:
+            return Response({
+                'error': 'Token validation failed. The link may have been tampered with.',
+                'valid': False
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        return Response({
+            'valid': True,
+            'username': reset_data.get('username'),
+            'email': reset_data.get('email'),
+            'message': 'Reset token is valid.'
+        }, status=status.HTTP_200_OK)

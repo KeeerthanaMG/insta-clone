@@ -15,6 +15,7 @@ from django.db.models import Q
 import logging
 from django.core.cache import cache
 import time
+import base64
 
 logger = logging.getLogger("ctf_debug")
 
@@ -640,6 +641,7 @@ class LoginView(APIView):
                     'email': user.email,
                     # CTF bug discovery data
                     'vulnerability_detected': True,
+                    'notification_type': 'success' if bug_response['success'] else 'info',
                     'ctf_message': bug_response['message'],
                     'ctf_points_awarded': bug_response['points_awarded'],
                     'ctf_total_points': bug_response['total_points'],
@@ -670,55 +672,115 @@ class LoginView(APIView):
                     if not already_in_session:
                         pending_ctf_discoveries.append(cached_attempt)
                         print(f"[CTF PASSWORD RESET] Found cached password reset attempt for session {session_key}")
+                
+                # Also check for all CTF bug types in cache
+                ctf_bug_types = [
+                    ('Invalid Password Reset Token Format', 'ctf_invalid_token_attempt'),
+                    ('Invalid Password Reset UID Format', 'ctf_invalid_uid_attempt'),
+                    ('Malformed Password Reset Token', 'ctf_malformed_token_attempt'),
+                    ('Invalid Base64 in Password Reset Token', 'ctf_invalid_base64_attempt'),
+                ]
+                
+                for bug_title, cache_prefix in ctf_bug_types:
+                    cache_key_bug = f"{cache_prefix}_{session_key}"
+                    cached_bug_attempt = cache.get(cache_key_bug)
+                    if cached_bug_attempt and cached_bug_attempt.get('bug_title') == bug_title:
+                        # Add cached attempt to session discoveries if not already there
+                        already_in_session = any(
+                            d.get('bug_title') == bug_title and 
+                            d.get('session_key') == session_key
+                            for d in pending_ctf_discoveries
+                        )
+                        if not already_in_session:
+                            pending_ctf_discoveries.append(cached_bug_attempt)
+                            print(f"[CTF {bug_title.upper()}] Found cached {bug_title.lower()} attempt for session {session_key}")
             
             logger.warning(f"[CTF PASSWORD RESET] Checking pending CTF discoveries: {pending_ctf_discoveries}")
             
-            # Check for password reset token vulnerability attempts
-            password_reset_bug_found = False
-            for discovery in pending_ctf_discoveries:
-                if discovery.get('bug_title') == 'Predictable Password Reset Token':
-                    password_reset_bug_found = True
-                    logger.error(f"[CTF PASSWORD RESET] 🎉 AWARDING POINTS for password reset bug discovery to user {user.username}")
-                    
-                    # Award CTF points to the user who just logged in
-                    bug_response = trigger_bug_found(
-                        user=user,
-                        bug_title="Predictable Password Reset Token",
-                        points=100
-                    )
-                    
-                    logger.error(f"[CTF PASSWORD RESET] Bug response: {bug_response}")
-                    
-                    # Clear this discovery from BOTH session AND cache
-                    remaining_discoveries = [d for d in pending_ctf_discoveries 
-                                           if d.get('bug_title') != 'Predictable Password Reset Token']
-                    request.session['pending_ctf_discoveries'] = remaining_discoveries
-                    request.session.save()
-                    
-                    # Clear session-based cache
-                    if session_key:
-                        cache.delete(f"ctf_password_reset_attempt_{session_key}")
-                    
-                    # Return CTF success response
-                    return Response({
-                        # Normal login data
-                        'token': token.key,
-                        'user_id': user.id,
-                        'username': user.username,
-                        'email': user.email,
-                        # CTF bug discovery data
-                        'vulnerability_detected': True,
-                        'ctf_message': bug_response['message'],
-                        'ctf_points_awarded': bug_response['points_awarded'],
-                        'ctf_total_points': bug_response['total_points'],
-                        'flag': f"CTF{{predictable_reset_token_{user.id}}}",
-                        'description': 'You discovered a predictable password reset token vulnerability! You attempted to exploit the token format to access another users account.',
-                        'bug_type': 'Predictable Password Reset Token',
-                        'security_note': 'Password reset tokens should be cryptographically secure and unpredictable.',
-                        'target_username': discovery.get('target_username', 'unknown'),
-                        'attempted_exploit': f"Tried to reset {discovery.get('target_username', 'unknown')}'s password using {discovery.get('token_username', 'unknown')}'s token"
-                    }, status=status.HTTP_200_OK)
-                    break  # Break out of the loop after finding and processing the bug
+            # Check for all CTF bugs and award points for each one found
+            ctf_bugs_to_check = [
+                'Invalid Password Reset UID Format',
+                'Invalid Password Reset Token Format', 
+                'Malformed Password Reset Token',
+                'Invalid Base64 in Password Reset Token',
+                'Predictable Password Reset Token'
+            ]
+            
+            for bug_title in ctf_bugs_to_check:
+                for discovery in pending_ctf_discoveries:
+                    if discovery.get('bug_title') == bug_title:
+                        logger.error(f"[CTF {bug_title.upper()}] 🎉 AWARDING POINTS for {bug_title.lower()} bug discovery to user {user.username}")
+                        
+                        # Award CTF points to the user who just logged in
+                        bug_response = trigger_bug_found(
+                            user=user,
+                            bug_title=bug_title,
+                            points=100
+                        )
+                        
+                        logger.error(f"[CTF {bug_title.upper()}] Bug response: {bug_response}")
+                        
+                        # Clear this discovery from BOTH session AND cache
+                        remaining_discoveries = [d for d in pending_ctf_discoveries 
+                                               if d.get('bug_title') != bug_title]
+                        request.session['pending_ctf_discoveries'] = remaining_discoveries
+                        request.session.save()
+                        
+                        # Clear session-based cache for all possible cache keys
+                        if session_key:
+                            cache_keys_to_clear = [
+                                f"ctf_invalid_token_attempt_{session_key}",
+                                f"ctf_invalid_uid_attempt_{session_key}",
+                                f"ctf_malformed_token_attempt_{session_key}",
+                                f"ctf_invalid_base64_attempt_{session_key}",
+                                f"ctf_password_reset_attempt_{session_key}"
+                            ]
+                            for cache_key in cache_keys_to_clear:
+                                cache.delete(cache_key)
+                        
+                        # Generate appropriate flag based on bug type
+                        flag_mapping = {
+                            'Invalid Password Reset UID Format': f"CTF{{invalid_reset_uid_{user.id}}}",
+                            'Invalid Password Reset Token Format': f"CTF{{invalid_reset_token_{user.id}}}",
+                            'Malformed Password Reset Token': f"CTF{{malformed_reset_token_{user.id}}}",
+                            'Invalid Base64 in Password Reset Token': f"CTF{{invalid_base64_token_{user.id}}}",
+                            'Predictable Password Reset Token': f"CTF{{predictable_reset_token_{user.id}}}"
+                        }
+                        
+                        # Generate description based on bug type
+                        description_mapping = {
+                            'Invalid Password Reset UID Format': 'You discovered an invalid password reset UID format vulnerability!',
+                            'Invalid Password Reset Token Format': 'You discovered an invalid password reset token format vulnerability!',
+                            'Malformed Password Reset Token': 'You discovered a malformed password reset token vulnerability!',
+                            'Invalid Base64 in Password Reset Token': 'You discovered an invalid base64 encoding in password reset token vulnerability!',
+                            'Predictable Password Reset Token': 'You discovered a predictable password reset token vulnerability! You attempted to exploit the token format to access another users account.'
+                        }
+                        
+                        # Return CTF success response
+                        return Response({
+                            # Normal login data
+                            'token': token.key,
+                            'user_id': user.id,
+                            'username': user.username,
+                            'email': user.email,
+                            # CTF bug discovery data
+                            'vulnerability_detected': True,
+                            'notification_type': 'success' if bug_response['success'] else 'info',
+                            'ctf_message': bug_response['message'],
+                            'ctf_points_awarded': bug_response['points_awarded'],
+                            'ctf_total_points': bug_response['total_points'],
+                            'flag': flag_mapping.get(bug_title, f"CTF{{unknown_bug_{user.id}}}") if bug_response['success'] else None,
+                            'description': description_mapping.get(bug_title, 'You discovered a security vulnerability!'),
+                            'bug_type': bug_title,
+                            'security_note': 'Password reset tokens should be cryptographically secure and properly validated.',
+                            'target_username': discovery.get('target_username', 'unknown'),
+                            'attempted_exploit': discovery.get('attempted_exploit', f"Attempted to exploit {bug_title.lower()}")
+                        }, status=status.HTTP_200_OK)
+                        # Break out of both loops after finding and processing the first bug
+                        break
+                else:
+                    continue  # Continue to next bug type if no discovery found
+                break  # Break out of outer loop if a bug was processed
             
             # Normal successful login without bugs
             logger.warning(f"[CTF RATE LIMIT] SUCCESS: Normal successful login for user {user.username} (no pending bugs)")
@@ -994,9 +1056,57 @@ class ResetPasswordView(APIView):
         # Parse the predictable token format: {uuid}-{base64_username}
         try:
             if '-' not in token:
-                return Response({
-                    'error': 'Invalid token format.'
-                }, status=status.HTTP_400_BAD_REQUEST)
+                print(f"🚨 CTF BUG DETECTED: Invalid Token Format!")
+                bug_title = "Invalid Password Reset Token Format"
+                points = 100
+                
+                if request.user.is_authenticated:
+                    # User is logged in, award points immediately
+                    bug_response = trigger_bug_found(
+                        user=request.user,
+                        bug_title=bug_title,
+                        points=points
+                    )
+                    return Response({
+                        'vulnerability_detected': True,
+                        'ctf_message': bug_response['message'],
+                        'ctf_points_awarded': bug_response['points_awarded'],
+                        'ctf_total_points': bug_response['total_points'],
+                        'flag': f"CTF{{invalid_reset_token_{request.user.id}}}",
+                        'description': 'You discovered an invalid password reset token format vulnerability!',
+                        'bug_type': bug_title,
+                    }, status=status.HTTP_200_OK)
+                else:
+                    # If anonymous, store in session to award points on login
+                    if not request.session.session_key:
+                        request.session.create()
+                    
+                    bug_data = {
+                        'bug_title': bug_title,
+                        'points': points,
+                        'timestamp': time.time(),
+                        'session_key': request.session.session_key
+                    }
+                    
+                    pending_discoveries = request.session.get('pending_ctf_discoveries', [])
+                    # Avoid duplicate entries for the same session
+                    if not any(d.get('bug_title') == bug_title for d in pending_discoveries):
+                        pending_discoveries.append(bug_data)
+                        request.session['pending_ctf_discoveries'] = pending_discoveries
+                        request.session.save()
+                        
+                        # Also cache it as a backup
+                        cache_key = f"ctf_invalid_token_attempt_{request.session.session_key}"
+                        cache.set(cache_key, bug_data, 3600) # 1 hour TTL
+                        print(f"🎯 CTF discovery stored for session: {request.session.session_key}")
+
+                    return Response({
+                        'vulnerability_detected': True,
+                        'bug_title': bug_title,
+                        'points_pending': points,
+                        'message': 'Vulnerability found! Log in to your account to claim the points.',
+                        'error': 'Invalid reset token. The token does not match the requested user.',
+                    }, status=status.HTTP_400_BAD_REQUEST)
             
             # Split token into uuid and base64_username parts
             # Token format is: uuid-base64_username
@@ -1116,27 +1226,255 @@ class PasswordResetVerifyView(APIView):
     """
     Verifies a password reset token for predictable misuse without changing the password.
     This endpoint is specifically for the CTF challenge.
+    
+    NEW BEHAVIOR (Split Notification System):
+    - For unauthenticated users: Return only simple warning messages
+    - For authenticated users: Award points immediately  
+    - Bug discovery and points awarding happens only after login
     """
     permission_classes = [AllowAny]
 
     def get(self, request, uidb64, token):
         import base64
+        import time
         from .ctf_views import trigger_bug_found
 
+        # Check for invalid UID format FIRST
         try:
             # Decode uidb64 to get the target username
             username_from_uidb64 = base64.b64decode(uidb64).decode()
         except (TypeError, ValueError, OverflowError):
-            return Response({'error': 'Invalid UID.'}, status=status.HTTP_400_BAD_REQUEST)
+            print(f"🚨 CTF BUG DETECTED: Invalid UID Format!")
+            bug_title = "Invalid Password Reset UID Format"
+            points = 100
+            
+            if request.user.is_authenticated:
+                # User is logged in, award points immediately
+                bug_response = trigger_bug_found(
+                    user=request.user,
+                    bug_title=bug_title,
+                    points=points
+                )
+                return Response({
+                    "vulnerability_detected": True,
+                    "notification_type": "success",
+                    "bug_title": bug_title,
+                    "ctf_message": f"Bug points awarded immediately since you're logged in!",
+                    "flag": f"CTF{{invalid_reset_uid_{request.user.id}}}",
+                    "points_awarded": bug_response['points_awarded'],
+                    "total_points": bug_response['total_points'],
+                    "require_login": False
+                }, status=status.HTTP_200_OK)
+            else:
+                # User is not logged in, store pending discovery in session and return simple warning
+                if not request.session.session_key:
+                    request.session.create()
+                
+                bug_data = {
+                    'bug_title': bug_title,
+                    'points': points,
+                    'timestamp': time.time(),
+                    'session_key': request.session.session_key
+                }
+                
+                pending_discoveries = request.session.get('pending_ctf_discoveries', [])
+                if not any(d.get('bug_title') == bug_title for d in pending_discoveries):
+                    pending_discoveries.append(bug_data)
+                    request.session['pending_ctf_discoveries'] = pending_discoveries
+                    request.session.save()
+                    
+                    # Also cache it as backup
+                    cache_key = f"ctf_invalid_uid_attempt_{request.session.session_key}"
+                    cache.set(cache_key, bug_data, 3600)  # 1 hour TTL
+                    print(f"🎯 CTF discovery stored for session: {request.session.session_key}")
+
+                return Response({
+                    "vulnerability_detected": True,
+                    "notification_type": "warning",
+                    "bug_title": bug_title,
+                    "warning_message": "⚠️ Invalid password reset link format detected. Please login to continue.",
+                    "require_login": True
+                }, status=status.HTTP_200_OK)
+
+        # Check for invalid token format - enhanced detection
+        if not token or '-' not in token or token.startswith('-') or token.endswith('-') or token == '---':
+            if not token:
+                bug_title = "Empty Password Reset Token"
+                print(f"🚨 CTF BUG DETECTED: Empty Token!")
+            elif token.startswith('-'):
+                bug_title = "Malformed Password Reset Token"
+                print(f"🚨 CTF BUG DETECTED: Token starts with dash!")
+            elif token.endswith('-'):
+                bug_title = "Malformed Password Reset Token" 
+                print(f"🚨 CTF BUG DETECTED: Token ends with dash!")
+            elif token == '---':
+                bug_title = "Malformed Password Reset Token"
+                print(f"🚨 CTF BUG DETECTED: Token contains only dashes!")
+            else:
+                bug_title = "Invalid Password Reset Token Format"
+                print(f"🚨 CTF BUG DETECTED: Invalid Token Format!")
+            
+            points = 100
+            
+            if request.user.is_authenticated:
+                # User is logged in, award points immediately
+                bug_response = trigger_bug_found(
+                    user=request.user,
+                    bug_title=bug_title,
+                    points=points
+                )
+                return Response({
+                    "vulnerability_detected": True,
+                    "notification_type": "success",
+                    "bug_title": bug_title,
+                    "ctf_message": f"Bug points awarded immediately since you're logged in!",
+                    "flag": f"CTF{{invalid_reset_token_{request.user.id}}}",
+                    "points_awarded": bug_response['points_awarded'],
+                    "total_points": bug_response['total_points'],
+                    "require_login": False
+                }, status=status.HTTP_200_OK)
+            else:
+                # User is not logged in, store pending discovery in session
+                if not request.session.session_key:
+                    request.session.create()
+                
+                bug_data = {
+                    'bug_title': bug_title,
+                    'points': points,
+                    'timestamp': time.time(),
+                    'session_key': request.session.session_key
+                }
+                
+                pending_discoveries = request.session.get('pending_ctf_discoveries', [])
+                if not any(d.get('bug_title') == bug_title for d in pending_discoveries):
+                    pending_discoveries.append(bug_data)
+                    request.session['pending_ctf_discoveries'] = pending_discoveries
+                    request.session.save()
+                    
+                    # Also cache it as backup
+                    cache_key = f"ctf_invalid_token_attempt_{request.session.session_key}"
+                    cache.set(cache_key, bug_data, 3600)  # 1 hour TTL
+                    print(f"🎯 CTF discovery stored for session: {request.session.session_key}")
+
+                return Response({
+                    "vulnerability_detected": True,
+                    "notification_type": "warning",
+                    "bug_title": bug_title,
+                    "warning_message": "⚠️ Invalid password reset token format detected. Please login to continue.",
+                    "require_login": True
+                }, status=status.HTTP_200_OK)
 
         try:
             # Extract the base64 encoded username from the token suffix
             token_parts = token.rsplit('-', 1)
             if len(token_parts) != 2:
-                raise ValueError("Invalid token format")
+                print(f"🚨 CTF BUG DETECTED: Malformed Token Structure!")
+                bug_title = "Malformed Password Reset Token"
+                points = 100
+                
+                if request.user.is_authenticated:
+                    # User is logged in, award points immediately
+                    bug_response = trigger_bug_found(
+                        user=request.user,
+                        bug_title=bug_title,
+                        points=points
+                    )
+                    return Response({
+                        "vulnerability_detected": True,
+                        "notification_type": "success",
+                        "bug_title": bug_title,
+                        "ctf_message": f"Bug points awarded immediately since you're logged in!",
+                        "flag": f"CTF{{malformed_reset_token_{request.user.id}}}",
+                        "points_awarded": bug_response['points_awarded'],
+                        "total_points": bug_response['total_points'],
+                        "require_login": False
+                    }, status=status.HTTP_200_OK)
+                else:
+                    # User is not logged in, store pending discovery in session and return simple warning
+                    if not request.session.session_key:
+                        request.session.create()
+                    
+                    bug_data = {
+                        'bug_title': bug_title,
+                        'points': points,
+                        'timestamp': time.time(),
+                        'session_key': request.session.session_key
+                    }
+                    
+                    pending_discoveries = request.session.get('pending_ctf_discoveries', [])
+                    if not any(d.get('bug_title') == bug_title for d in pending_discoveries):
+                        pending_discoveries.append(bug_data)
+                        request.session['pending_ctf_discoveries'] = pending_discoveries
+                        request.session.save()
+                        
+                        # Also cache it as backup
+                        cache_key = f"ctf_malformed_token_attempt_{request.session.session_key}"
+                        cache.set(cache_key, bug_data, 3600)  # 1 hour TTL
+                        print(f"🎯 CTF discovery stored for session: {request.session.session_key}")
+
+                    return Response({
+                        "vulnerability_detected": True,
+                        "notification_type": "warning",
+                        "bug_title": bug_title,
+                        "warning_message": "⚠️ Malformed password reset token detected. Please login to continue.",
+                        "require_login": True
+                    }, status=status.HTTP_200_OK)
             
             base64_username_part = token_parts[1]
-            username_from_token = base64.b64decode(base64_username_part).decode()
+            try:
+                username_from_token = base64.b64decode(base64_username_part).decode()
+            except Exception:
+                print(f"🚨 CTF BUG DETECTED: Invalid Base64 in Token!")
+                bug_title = "Invalid Base64 in Password Reset Token"
+                points = 100
+                
+                if request.user.is_authenticated:
+                    # User is logged in, award points immediately
+                    bug_response = trigger_bug_found(
+                        user=request.user,
+                        bug_title=bug_title,
+                        points=points
+                    )
+                    return Response({
+                        "vulnerability_detected": True,
+                        "notification_type": "success",
+                        "bug_title": bug_title,
+                        "ctf_message": f"Bug points awarded immediately since you're logged in!",
+                        "flag": f"CTF{{invalid_base64_token_{request.user.id}}}",
+                        "points_awarded": bug_response['points_awarded'],
+                        "total_points": bug_response['total_points'],
+                        "require_login": False
+                    }, status=status.HTTP_200_OK)
+                else:
+                    # User is not logged in, store pending discovery in session
+                    if not request.session.session_key:
+                        request.session.create()
+                    
+                    bug_data = {
+                        'bug_title': bug_title,
+                        'points': points,
+                        'timestamp': time.time(),
+                        'session_key': request.session.session_key
+                    }
+                    
+                    pending_discoveries = request.session.get('pending_ctf_discoveries', [])
+                    if not any(d.get('bug_title') == bug_title for d in pending_discoveries):
+                        pending_discoveries.append(bug_data)
+                        request.session['pending_ctf_discoveries'] = pending_discoveries
+                        request.session.save()
+                        
+                        # Also cache it as backup
+                        cache_key = f"ctf_invalid_base64_attempt_{request.session.session_key}"
+                        cache.set(cache_key, bug_data, 3600)  # 1 hour TTL
+                        print(f"🎯 CTF discovery stored for session: {request.session.session_key}")
+
+                    return Response({
+                        "vulnerability_detected": True,
+                        "notification_type": "warning",
+                        "bug_title": bug_title,
+                        "warning_message": "⚠️ Invalid base64 encoding detected in password reset token. Please login to continue.",
+                        "require_login": True
+                    }, status=status.HTTP_200_OK)
         except Exception:
             return Response({'error': 'Invalid token format.'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1159,8 +1497,9 @@ class PasswordResetVerifyView(APIView):
                 bug_response = trigger_bug_found(request.user, bug_title, 100)
                 return Response({
                     "vulnerability_detected": True,
+                    "notification_type": "success",
                     "bug_title": bug_title,
-                    "ctf_message": bug_response['message'],
+                    "ctf_message": f"Bug points awarded immediately since you're logged in!",
                     "flag": f"CTF{{predictable_reset_token_{request.user.id}}}" if bug_response['success'] else "Already solved",
                     "points_awarded": bug_response['points_awarded'],
                     "total_points": bug_response['total_points'],
@@ -1193,8 +1532,9 @@ class PasswordResetVerifyView(APIView):
 
                 return Response({
                     "vulnerability_detected": True,
+                    "notification_type": "warning",
                     "bug_title": bug_title,
-                    "ctf_message": "Predictable Password Reset Token bug found! Login to claim your points.",
+                    "warning_message": "⚠️ Predictable password reset token detected. Please login to continue.",
                     "require_login": True
                 }, status=status.HTTP_200_OK)
         else:

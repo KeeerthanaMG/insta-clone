@@ -18,6 +18,7 @@ urlpatterns = [
     path('auth/logout/', views.LogoutView.as_view(), name='logout'),
     path('auth/forgot-password/', views.ForgotPasswordView.as_view(), name='forgot-password'),
     path('auth/reset-password/<str:uidb64>/<str:token>/', views.ResetPasswordView.as_view(), name='reset-password'),
+    path('auth/reset-password/verify/<str:uidb64>/<str:token>/', views.PasswordResetVerifyView.as_view(), name='reset-password-verify'),
     
     # User endpoints
     path('users/me/', views.CurrentUserView.as_view(), name='current-user'),
