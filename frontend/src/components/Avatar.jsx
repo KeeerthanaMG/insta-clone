@@ -13,7 +13,7 @@ const Avatar = ({ src, alt, size = 'md', className = '' }) => {
     }
 
     return (
-        <div className={`${sizes[size]} rounded-full overflow-hidden bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center ${className}`}>
+        <div className={`${sizes[size]} rounded-full overflow-hidden bg-gradient-to-br from-slate-700 to-gray-400 flex items-center justify-center ${className}`}>
             {src ? (
                 <img
                     src={src}

@@ -3,6 +3,7 @@ import { Camera, Grid, Edit3, Settings, Lock, Bookmark } from 'lucide-react'
 import { usersAPI } from '../lib/api'
 import Avatar from '../components/Avatar'
 import { motion } from 'framer-motion'
+import { useNavigate } from 'react-router-dom'
 
 const ProfilePage = () => {
     const [profile, setProfile] = useState(null)
@@ -13,6 +14,8 @@ const ProfilePage = () => {
     const [loading, setLoading] = useState(true)
     const [editingBio, setEditingBio] = useState(false)
     const [bioText, setBioText] = useState('')
+
+    const navigate = useNavigate()
 
     useEffect(() => {
         fetchProfile()
@@ -82,6 +85,10 @@ const ProfilePage = () => {
         }
     }
 
+    const handlePostClick = (postId) => {
+        navigate(`/post/${postId}`)
+    }
+
     const renderTabContent = () => {
         let currentPosts = []
         let emptyMessage = ''
@@ -140,6 +147,7 @@ const ProfilePage = () => {
                         initial={{ opacity: 0, scale: 0.8 }}
                         animate={{ opacity: 1, scale: 1 }}
                         transition={{ delay: index * 0.1 }}
+                        onClick={() => handlePostClick(post.id)}
                     >
                         <img
                             src={activeTab === 'saved-posts' ? post.post?.image || post.image : post.image}
@@ -297,24 +305,25 @@ const ProfilePage = () => {
             {/* Posts section with tabs */}
             <div className="bg-white rounded-xl border border-gray-200 p-6">
                 {/* Tab navigation */}
-                <div className="border-b border-gray-200 mb-6">
+                <div className="border-b pb-3 border-gray-200 mb-6">
                     <nav className="flex space-x-8">
                         <button
                             onClick={() => setActiveTab('my-posts')}
                             className={`py-2 px-1 border-b-2 font-medium text-sm flex items-center space-x-2 ${
                                 activeTab === 'my-posts'
-                                    ? 'border-pink-500 text-pink-600'
+                                    ? 'text-pink-600'
                                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                             }`}
                         >
                             <Grid className="h-4 w-4" />
+                            
                             <span>My Posts ({posts.length})</span>
                         </button>
                         <button
                             onClick={() => setActiveTab('private-posts')}
                             className={`py-2 px-1 border-b-2 font-medium text-sm flex items-center space-x-2 ${
                                 activeTab === 'private-posts'
-                                    ? 'border-pink-500 text-pink-600'
+                                    ? ' text-pink-600'
                                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                             }`}
                         >
@@ -325,7 +334,7 @@ const ProfilePage = () => {
                             onClick={() => setActiveTab('saved-posts')}
                             className={`py-2 px-1 border-b-2 font-medium text-sm flex items-center space-x-2 ${
                                 activeTab === 'saved-posts'
-                                    ? 'border-pink-500 text-pink-600'
+                                    ? 'text-pink-600'
                                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                             }`}
                         >

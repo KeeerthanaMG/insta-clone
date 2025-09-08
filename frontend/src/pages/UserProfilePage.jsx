@@ -62,6 +62,10 @@ const UserProfilePage = () => {
         }
     }
 
+    const handlePostClick = (postId) => {
+        navigate(`/post/${postId}`)
+    }
+
     if (loading) {
         return (
             <div className="max-w-4xl mx-auto">
@@ -171,7 +175,11 @@ const UserProfilePage = () => {
                 ) : (
                     <div className="grid grid-cols-3 gap-1 sm:gap-2">
                         {posts.map((post) => (
-                            <div key={post.id} className="aspect-square relative group cursor-pointer">
+                            <div 
+                                key={post.id} 
+                                className="aspect-square relative group cursor-pointer"
+                                onClick={() => handlePostClick(post.id)}
+                            >
                                 <img
                                     src={post.image}
                                     alt="Post"

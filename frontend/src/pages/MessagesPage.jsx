@@ -19,6 +19,8 @@ const MessagesPage = () => {
     const [searchQuery, setSearchQuery] = useState('')
     const [searchResults, setSearchResults] = useState([])
     const [isSearching, setIsSearching] = useState(false)
+    const [selectedSearchUser, setSelectedSearchUser] = useState(null)
+    const [searchMessageText, setSearchMessageText] = useState('')
     const [flagData, setFlagData] = useState(null)
 
     const socket = useRef(null)
@@ -27,6 +29,24 @@ const MessagesPage = () => {
     useEffect(() => {
         fetchThreads()
     }, [])
+
+    // Listen for shared post event to refresh messages immediately
+    useEffect(() => {
+        const handleSharedPost = (e) => {
+            const { threadId } = e.detail
+            // Refresh threads and messages for the new shared post
+            fetchThreads().then(() => {
+                setTimeout(() => {
+                    navigate(`/messages/${threadId}`)
+                    fetchMessages(threadId)
+                }, 100)
+            })
+        }
+        window.addEventListener('shared-post-message', handleSharedPost)
+        return () => {
+            window.removeEventListener('shared-post-message', handleSharedPost)
+        }
+    }, [navigate])
 
     useEffect(() => {
         if (threadId) {
@@ -38,9 +58,19 @@ const MessagesPage = () => {
                 setSelectedThread(foundThread)
                 fetchMessages(threadId)
             } else {
-                console.log('[DEBUG] Thread not found in user threads, but still fetching messages...')
-                // Still try to fetch messages even if thread not in user's list (for IDOR testing)
-                fetchMessages(threadId)
+                console.log('[DEBUG] Thread not found in user threads, fetching anyway...')
+                // Thread might be newly created, so fetch it and the messages
+                fetchThreads().then(() => {
+                    const updatedThreads = [...inbox, ...requests]
+                    const newThread = updatedThreads.find(t => t.id === parseInt(threadId))
+                    if (newThread) {
+                        setSelectedThread(newThread)
+                        fetchMessages(threadId)
+                    } else {
+                        // Still try to fetch messages even if thread not in user's list (for IDOR testing)
+                        fetchMessages(threadId)
+                    }
+                })
             }
         } else {
             setSelectedThread(null)
@@ -64,16 +94,9 @@ const MessagesPage = () => {
     }, [messages])
 
     useEffect(() => {
-        // Remove automatic search - only search when user presses Enter
-        // if (searchQuery.trim()) {
-        //     setIsSearching(true)
-        //     const handler = setTimeout(() => searchUsers(searchQuery), 300)
-        //     return () => clearTimeout(handler)
-        // } else {
-        //     setIsSearching(false)
-        //     setSearchResults([])
-        // }
-    }, [searchQuery])
+        // Remove automatic search - only search when user presses Enter or submits form
+        // This prevents cursor jumping issues
+    }, []) // Remove searchQuery dependency
 
     const handleSearchSubmit = (e) => {
         e.preventDefault()
@@ -88,6 +111,7 @@ const MessagesPage = () => {
 
     const handleSearchKeyPress = (e) => {
         if (e.key === 'Enter') {
+            e.preventDefault()
             handleSearchSubmit(e)
         }
     }
@@ -231,6 +255,8 @@ const MessagesPage = () => {
             const response = await messagesAPI.startThread(user.id)
             setSearchQuery('')
             setSearchResults([])
+            setSelectedSearchUser(null)
+            setSearchMessageText('')
             fetchThreads()
             navigate(`/messages/${response.data.id}`)
         } catch (error) {
@@ -238,14 +264,50 @@ const MessagesPage = () => {
         }
     }
 
-    const handleAcceptRequest = async (threadId) => {
+    const handleSendMessageToSearchUser = async (user, messageText) => {
         try {
-            await messagesAPI.acceptThread(threadId)
-            fetchThreads()
-            navigate(`/messages/${threadId}`)
+            if (!messageText.trim()) return
+
+            // First create or get the thread
+            const threadResponse = await messagesAPI.startThread(user.id)
+            const threadId = threadResponse.data.id
+
+            // Then send the message using the WebSocket or API
+            if (threadResponse.data.created) {
+                // New thread created, send message via API
+                await messagesAPI.sendMessage(threadId, messageText.trim())
+            } else {
+                // Existing thread, we could use WebSocket but API is more reliable here
+                await messagesAPI.sendMessage(threadId, messageText.trim())
+            }
+
+            // Clear search and navigate to the conversation
+            setSearchQuery('')
+            setSearchResults([])
+            setSelectedSearchUser(null)
+            setSearchMessageText('')
+            setIsSearching(false)
+            
+            // Refresh threads before navigation to ensure the new thread appears
+            await fetchThreads()
+            
+            // Small delay to ensure thread is updated before navigation
+            setTimeout(() => {
+                navigate(`/messages/${threadId}`)
+            }, 100)
+
         } catch (error) {
-            console.error('Error accepting request:', error)
+            console.error('Error sending message to search user:', error)
         }
+    }
+
+    const handleSearchUserClick = (user) => {
+        setSelectedSearchUser(user)
+    }
+
+    const handleBackFromSearchUser = () => {
+        setSelectedSearchUser(null)
+        setSearchMessageText('')
     }
 
     const renderThreadItem = (thread, isRequest = false) => (
@@ -285,7 +347,7 @@ const MessagesPage = () => {
                             placeholder="Search or start new chat... (Press Enter)"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            onKeyPress={handleSearchKeyPress}
+                            onKeyDown={handleSearchKeyPress}
                             className="w-full pl-10 pr-4 py-2 bg-gray-100 border-0 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500"
                         />
                     </div>
@@ -294,12 +356,68 @@ const MessagesPage = () => {
             <div className="flex-1 overflow-y-auto">
                 {isSearching ? (
                     <div>
-                        {searchResults.map(user => (
-                            <button key={user.id} onClick={() => handleStartChat(user)} className="w-full p-4 flex items-center space-x-3 hover:bg-gray-50">
-                                <Avatar src={user.profile_picture} alt={user.username} size="md" />
-                                <span className="font-medium">{user.username}</span>
-                            </button>
-                        ))}
+                        {selectedSearchUser ? (
+                            // Show message composer for selected user
+                            <div className="p-4">
+                                <div className="flex items-center space-x-3 mb-4">
+                                    <button onClick={handleBackFromSearchUser} className="p-2 hover:bg-gray-100 rounded-full">
+                                        <ArrowLeft className="h-4 w-4" />
+                                    </button>
+                                    <Avatar src={selectedSearchUser.profile_picture} alt={selectedSearchUser.username} size="md" />
+                                    <div>
+                                        <h3 className="font-medium text-gray-900">{selectedSearchUser.username}</h3>
+                                        <p className="text-sm text-gray-500">Send a message</p>
+                                    </div>
+                                </div>
+                                <div className="space-y-3">
+                                    <textarea
+                                        placeholder="Type your message..."
+                                        value={searchMessageText}
+                                        onChange={(e) => setSearchMessageText(e.target.value)}
+                                        className="w-full px-3 py-2 bg-gray-100 border-0 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 resize-none"
+                                        rows={3}
+                                    />
+                                    <div className="flex space-x-2">
+                                        <button
+                                            onClick={() => handleSendMessageToSearchUser(selectedSearchUser, searchMessageText)}
+                                            disabled={!searchMessageText.trim()}
+                                            className="flex-1 bg-pink-500 text-white py-2 px-4 rounded-lg hover:bg-pink-600 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                                        >
+                                            Send Message
+                                        </button>
+                                        <button
+                                            onClick={() => handleStartChat(selectedSearchUser)}
+                                            className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-medium"
+                                        >
+                                            Just Chat
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            // Show search results
+                            <div>
+                                {searchResults.length === 0 ? (
+                                    <div className="p-4 text-center text-gray-500">
+                                        {searchQuery ? 'No users found' : 'Start typing to search...'}
+                                    </div>
+                                ) : (
+                                    searchResults.map(user => (
+                                        <button 
+                                            key={user.id} 
+                                            onClick={() => handleSearchUserClick(user)} 
+                                            className="w-full p-4 flex items-center space-x-3 hover:bg-gray-50 transition-colors"
+                                        >
+                                            <Avatar src={user.profile_picture} alt={user.username} size="md" />
+                                            <div className="flex-1 text-left">
+                                                <p className="font-medium text-gray-900">{user.username}</p>
+                                                <p className="text-sm text-gray-500">{user.followers_count} followers</p>
+                                            </div>
+                                        </button>
+                                    ))
+                                )}
+                            </div>
+                        )}
                     </div>
                 ) : (
                     <>
@@ -362,7 +480,7 @@ const MessagesPage = () => {
     )
 
     return (
-        <div className="max-w-6xl mx-auto h-[calc(100vh-80px)] md:h-[calc(100vh-40px)] bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="max-w-6xl mx-auto h-[calc(100vh-380px)] md:h-[calc(100vh-150px)] bg-white rounded-xl border border-gray-200 overflow-hidden">
             <div className="flex h-full">
                 <ConversationList />
                 <ChatWindow />
@@ -380,5 +498,4 @@ const MessagesPage = () => {
         </div>
     )
 }
-
 export default MessagesPage

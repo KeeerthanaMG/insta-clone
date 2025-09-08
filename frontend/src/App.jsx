@@ -15,6 +15,7 @@ import ProfilePage from './pages/ProfilePage'
 import UserProfilePage from './pages/UserProfilePage'
 import FlagPopup from './components/FlagPopup'
 import ProtectedRoute from './components/ProtectedRoute'
+import PostDetailsPage from './pages/PostDetailsPage'
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
@@ -86,6 +87,7 @@ function App() {
                 <Route path="/notifications" element={<NotificationsPage />} />
                 <Route path="/profile" element={<ProfilePage />} />
                 <Route path="/profile/:username" element={<UserProfilePage />} />
+                <Route path="/post/:postId" element={<PostDetailsPage />} />
                 <Route path="/" element={<Navigate to="/feed" replace />} />
               </Routes>
             </MainLayout>

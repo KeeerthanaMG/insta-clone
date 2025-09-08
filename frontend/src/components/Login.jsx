@@ -1,10 +1,12 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { Camera, Eye, EyeOff } from 'lucide-react'
 import { getCSRFToken } from '../utils/csrf'
 
 const Login = ({ onLogin }) => {
     const [username, setUsername] = useState('')
     const [password, setPassword] = useState('')
+    const [showPassword, setShowPassword] = useState(false)
     const [error, setError] = useState('')
     const [loading, setLoading] = useState(false)
     const [rateLimitingDetected, setRateLimitingDetected] = useState(false)
@@ -98,36 +100,59 @@ const Login = ({ onLogin }) => {
     }
 
     return (
-        <div className="flex items-center justify-center min-h-screen bg-gray-100">
-            <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-sm">
-                <h2 className="text-2xl font-bold mb-6 text-center">InstaCam Login</h2>
+        <div className="min-h-screen bg-gradient-to-br from-pink-50 via-purple-50 to-indigo-100 flex items-center justify-center p-4">
+            <div className="bg-white/80 backdrop-blur-lg p-10 rounded-3xl shadow-2xl w-full max-w-md border border-white/20">
+                {/* Logo */}
+                <div className="text-center mb-8">
+                    <div className="flex items-center justify-center mb-4">
+                        <div className="p-4 bg-gradient-to-r from-pink-500 to-purple-600 rounded-2xl shadow-lg">
+                            <Camera className="h-10 w-10 text-white" />
+                        </div>
+                    </div>
+                    <h1 className="text-3xl font-bold bg-gradient-to-r from-pink-600 to-purple-600 bg-clip-text text-transparent">
+                        InstaCam
+                    </h1>
+                    <p className="text-gray-600 mt-2">Welcome back!</p>
+                </div>
 
                 {error && (
-                    <div className="mb-4 p-4 bg-red-100 border border-red-400 text-red-700 rounded-lg">
-                        {error}
-                    </div>
-                )}
-
-                {/* Success message for CTF flag discovery */}
-                {success && (
-                    <div className="mb-4 p-4 bg-green-100 border border-green-400 text-green-700 rounded-lg">
-                        <div className="flex items-center">
-                            <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                            </svg>
-                            {success}
+                    <div className="mb-6 p-4 bg-red-50 border border-red-200 text-red-700 rounded-2xl backdrop-blur-sm">
+                        <div className="flex items-start">
+                            <div className="flex-shrink-0">
+                                <svg className="w-5 h-5 text-red-400 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                                </svg>
+                            </div>
+                            <div className="ml-3">
+                                <p className="text-sm font-medium">{error}</p>
+                            </div>
                         </div>
-                        {rateLimitingDetected && (
-                            <p className="mt-2 text-sm">
-                                Now login with your correct credentials to claim the CTF points!
-                            </p>
-                        )}
                     </div>
                 )}
 
-                <form onSubmit={handleSubmit}>
-                    <div className="mb-4">
-                        <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="username">
+                {success && (
+                    <div className="mb-6 p-4 bg-green-50 border border-green-200 text-green-700 rounded-2xl backdrop-blur-sm">
+                        <div className="flex items-start">
+                            <div className="flex-shrink-0">
+                                <svg className="w-5 h-5 text-green-400 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                                </svg>
+                            </div>
+                            <div className="ml-3">
+                                <p className="text-sm font-medium">{success}</p>
+                                {rateLimitingDetected && (
+                                    <p className="mt-2 text-sm">
+                                        Now login with your correct credentials to claim the CTF points!
+                                    </p>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                <form onSubmit={handleSubmit} className="space-y-6">
+                    <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-2" htmlFor="username">
                             Username
                         </label>
                         <input
@@ -136,41 +161,67 @@ const Login = ({ onLogin }) => {
                             value={username}
                             onChange={(e) => setUsername(e.target.value)}
                             required
-                            className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full p-4 border border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent bg-gray-50/50 backdrop-blur-sm transition-all duration-200 text-gray-900 placeholder-gray-500"
+                            placeholder="Enter your username"
                         />
                     </div>
-                    <div className="mb-6">
-                        <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="password">
+                    <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-2" htmlFor="password">
                             Password
                         </label>
-                        <input
-                            type="password"
-                            id="password"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            required
-                            className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
+                        <div className="relative">
+                            <input
+                                type={showPassword ? 'text' : 'password'}
+                                id="password"
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                required
+                                className="w-full p-4 pr-12 border border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent bg-gray-50/50 backdrop-blur-sm transition-all duration-200 text-gray-900 placeholder-gray-500"
+                                placeholder="Enter your password"
+                            />
+                            <button
+                                type="button"
+                                onClick={() => setShowPassword(!showPassword)}
+                                className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700 transition-colors"
+                            >
+                                {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                            </button>
+                        </div>
                     </div>
                     <button
                         type="submit"
                         disabled={loading}
-                        className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold transition-all duration-200 hover:bg-blue-700 disabled:opacity-50"
+                        className="w-full bg-gradient-to-r from-pink-500 to-purple-600 text-white py-4 rounded-2xl font-bold text-lg transition-all duration-200 hover:shadow-2xl hover:scale-[1.02] disabled:opacity-50 disabled:transform-none disabled:hover:shadow-none"
                     >
-                        {loading ? 'Logging in...' : 'Login'}
+                        {loading ? (
+                            <div className="flex items-center justify-center space-x-2">
+                                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                <span>Signing in...</span>
+                            </div>
+                        ) : (
+                            'Sign In'
+                        )}
                     </button>
                 </form>
 
-                <div className="mt-4 text-center space-y-2">
+                <div className="mt-8 text-center space-y-4">
                     <p className="text-sm text-gray-600">
-                        <a href="/forgot-password" className="text-blue-600 hover:underline">
+                        <a href="/forgot-password" className="text-pink-600 hover:text-pink-700 font-semibold transition-colors">
                             Forgot your password?
                         </a>
                     </p>
+                    <div className="relative">
+                        <div className="absolute inset-0 flex items-center">
+                            <div className="w-full border-t border-gray-200"></div>
+                        </div>
+                        <div className="relative flex justify-center text-sm">
+                            <span className="px-4 bg-white text-gray-500">or</span>
+                        </div>
+                    </div>
                     <p className="text-sm text-gray-600">
                         Don't have an account?{' '}
-                        <a href="/register" className="text-blue-600 hover:underline">
-                            Register here
+                        <a href="/register" className="text-pink-600 hover:text-pink-700 font-semibold transition-colors">
+                            Sign up now
                         </a>
                     </p>
                 </div>
