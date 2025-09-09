@@ -49,7 +49,7 @@ function App() {
 
   return (
     <>
-      <FlagPopup />
+      {/* <FlagPopup /> */}
       <Routes>
         <Route path="/login" element={
           <PublicRoute>

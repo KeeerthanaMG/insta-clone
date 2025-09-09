@@ -53,7 +53,7 @@ const TopBar = ({ sidebarCollapsed }) => {
             <div className="px-6 py-4">
                 <div className="flex items-center justify-end space-x-6">
                     <div className="flex items-center space-x-4">
-                        <div className="flex items-center space-x-2 bg-gradient-to-r from-green-100 to-green-300 px-4 py-2 rounded-lg border border-green-200">
+                        {/* <div className="flex items-center space-x-2 bg-gradient-to-r from-green-100 to-green-300 px-4 py-2 rounded-lg border border-green-200">
                             <Trophy className="h-5 w-5 text-green-700" />
                             <span className="text-sm font-semibold text-green-800">
                                 {profile?.points || 0} Points
@@ -64,7 +64,7 @@ const TopBar = ({ sidebarCollapsed }) => {
                             <span className="text-sm font-semibold text-purple-800">
                                 {profile?.bugs_solved || 0} Bugs Found
                             </span>
-                        </div>
+                        </div> */}
                         <div className="flex items-center space-x-2">
                             <div className="w-8 h-8 bg-gradient-to-r from-gray-200 to-gray-400 rounded-full flex items-center justify-center">
                                 <span className="text-gray-900 text-sm font-bold">

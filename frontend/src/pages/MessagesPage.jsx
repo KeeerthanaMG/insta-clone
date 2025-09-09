@@ -485,16 +485,6 @@ const MessagesPage = () => {
                 <ConversationList />
                 <ChatWindow />
             </div>
-            {/* Show CTF flag popup if flagData is present */}
-            {flagData && (
-                <FlagPopup
-                    flag={flagData.flag}
-                    bugName={flagData.bug_name}
-                    points={flagData.points_awarded}
-                    message={flagData.message}
-                    onClose={() => setFlagData(null)}
-                />
-            )}
         </div>
     )
 }
