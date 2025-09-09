@@ -249,9 +249,10 @@ const LoginPage = ({ onLogin }) => {
                         <button
                             type="submit"
                             disabled={loading}
-                            className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-lg text-white btn-primary disabled:opacity-50"
+                            className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-lg text-white btn-primary"
                         >
-                            {loading ? 'Signing in...' : 'Sign in'}
+                            {/* {loading ? 'Signing in...' : 'Sign in'} */}
+                            Sign In
                         </button>
                     </div>
 

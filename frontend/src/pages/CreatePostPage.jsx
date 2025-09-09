@@ -131,7 +131,7 @@ const CreatePostPage = () => {
                 {/* Caption */}
                 <div className="bg-white/80 backdrop-blur-lg rounded-3xl border border-gray-100 p-8 shadow-lg">
                     <label htmlFor="caption" className="block text-lg font-bold text-gray-900 mb-4">
-                        Write a caption
+                        Write a captoin
                     </label>
                     <textarea
                         id="caption"
@@ -146,8 +146,8 @@ const CreatePostPage = () => {
                         <span className="text-sm text-gray-500">
                             Share your story, add hashtags, mention friends
                         </span>
-                        <span className={`text-sm font-medium ${caption.length > 2000 ? 'text-red-500' : 'text-gray-500'}`}>
-                            {caption.length}/2200
+                        <span className={`text-sm font-medium ${caption.length > 200 ? 'text-red-500' : 'text-gray-500'}`}>
+                            {caption.length}/200
                         </span>
                     </div>
                 </div>
@@ -164,7 +164,7 @@ const CreatePostPage = () => {
                         />
                         <div className="flex-1">
                             <span className="text-base font-semibold text-gray-900">Make this post private</span>
-                            <p className="text-sm text-gray-500 mt-1">Only you will be able to see this post</p>
+                            <p className="text-sm text-gray-500 mt-1">Only you alone will not be able to see this post</p>
                         </div>
                         <div className="p-2 bg-purple-100 rounded-full">
                             <svg className="w-5 h-5 text-purple-600" fill="currentColor" viewBox="0 0 20 20">

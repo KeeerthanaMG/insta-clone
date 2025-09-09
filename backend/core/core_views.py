@@ -254,6 +254,17 @@ class PostViewSet(viewsets.ModelViewSet):
             'count': comments.count(),
             'results': serializer.data
         }, status=status.HTTP_200_OK)
+    @action(detail=True, methods=['delete'], permission_classes=[permissions.IsAuthenticated])
+    def delete_post(self, request, pk=None):
+        """
+        Delete a post.
+        Only the post owner can delete the post.
+        """
+        post = self.get_object()
+        if post.user != request.user:
+            return Response({'error': 'You do not have permission to delete this post.'}, status=status.HTTP_403_FORBIDDEN)
+        post.delete()
+        return Response({'success': 'Post deleted successfully.'}, status=status.HTTP_200_OK)
 
 
 class CommentViewSet(viewsets.ModelViewSet):

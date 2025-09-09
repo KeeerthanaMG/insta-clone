@@ -56,12 +56,12 @@ urlpatterns = [
          views.CommentViewSet.as_view({'get': 'list', 'post': 'create'}),
          name='post-comments'),
 
-    # Image serving endpoint - VULNERABLE (CTF bug)
+    # Image serving endpoint
     path('posts/image/<int:post_id>/', views.serve_post_image, name='serve-post-image'),
-    
-    # Save post endpoint - VULNERABLE (Race condition CTF bug)
+    path('posts/<int:pk>/delete_post/', views.PostViewSet.as_view({'delete': 'delete_post'}), name='delete-post'),
+    # Save post endpoint 
     path('posts/<int:post_id>/save/', views.SavePostView.as_view(), name='save-post'),
-
+        
     # Debug endpoint - REMOVE IN PRODUCTION
     path('debug/threads/', views.DebugThreadsView.as_view(), name='debug-threads'),
 ]

@@ -142,6 +142,7 @@ export const postsAPI = {
     }),
     likePost: (id) => api.post(`/posts/${id}/like/`),
     savePost: (id) => api.post(`/posts/${id}/save/`),
+    deletePost: (id) => api.delete(`/posts/${id}/delete_post/`),
 }
 
 export const usersAPI = {

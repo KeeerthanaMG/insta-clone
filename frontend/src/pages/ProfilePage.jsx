@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Camera, Grid, Edit3, Settings, Lock, Bookmark } from 'lucide-react'
-import { usersAPI } from '../lib/api'
+import { usersAPI, postsAPI } from '../lib/api'
 import Avatar from '../components/Avatar'
 import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
@@ -49,7 +49,7 @@ const ProfilePage = () => {
 
         // Listen for CTF events
         window.addEventListener('ctf-bug-found', handleBugFound)
-        
+
         return () => {
             window.removeEventListener('ctf-bug-found', handleBugFound)
         }
@@ -87,6 +87,21 @@ const ProfilePage = () => {
 
     const handlePostClick = (postId) => {
         navigate(`/post/${postId}`)
+    }
+    const handleDeletePost = async (postId, tab) => {
+        if (!window.confirm('Are you sure you want to delete this post?')) return;
+        try {
+            await postsAPI.deletePost(postId)
+            if (tab === 'my-posts') {
+                setPosts(prev => prev.filter(post => post.id !== postId))
+            } else if (tab === 'private-posts') {
+                setPrivatePosts(prev => prev.filter(post => post.id !== postId))
+            } else if (tab === 'saved-posts') {
+                setSavedPosts(prev => prev.filter(post => (post.post?.id || post.id) !== postId))
+            }
+        } catch (err) {
+            alert(err?.response?.data?.error || 'Failed to delete post')
+        }
     }
 
     const renderTabContent = () => {
@@ -140,46 +155,64 @@ const ProfilePage = () => {
 
         return (
             <div className="grid grid-cols-3 gap-1 sm:gap-2">
-                {currentPosts.map((post, index) => (
-                    <motion.div
-                        key={post.id}
-                        className="aspect-square relative group cursor-pointer"
-                        initial={{ opacity: 0, scale: 0.8 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        transition={{ delay: index * 0.1 }}
-                        onClick={() => handlePostClick(post.id)}
-                    >
-                        <img
-                            src={activeTab === 'saved-posts' ? post.post?.image || post.image : post.image}
-                            alt="Post"
-                            className="w-full h-full object-cover rounded-lg"
-                        />
-                        {/* Private post indicator */}
-                        {activeTab === 'private-posts' && (
-                            <div className="absolute top-2 right-2 bg-black bg-opacity-50 rounded-full p-1">
-                                <Lock className="h-3 w-3 text-white" />
-                            </div>
-                        )}
-                        {/* Saved post indicator */}
-                        {activeTab === 'saved-posts' && (
-                            <div className="absolute top-2 right-2 bg-black bg-opacity-50 rounded-full p-1">
-                                <Bookmark className="h-3 w-3 text-white fill-white" />
-                            </div>
-                        )}
-                        <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-all duration-200 rounded-lg flex items-center justify-center">
-                            <div className="opacity-0 group-hover:opacity-100 text-white text-center">
-                                <div className="flex items-center space-x-4">
-                                    <span className="text-sm font-medium">
-                                        ❤️ {activeTab === 'saved-posts' ? (post.post?.like_count || post.like_count || 0) : (post.like_count || 0)}
-                                    </span>
-                                    <span className="text-sm font-medium">
-                                        💬 {activeTab === 'saved-posts' ? (post.post?.comment_count || post.comment_count || 0) : (post.comment_count || 0)}
-                                    </span>
+                {currentPosts.map((post, index) => {
+                    // For saved posts, the actual post is post.post
+                    const actualPost = activeTab === 'saved-posts' ? post.post || post : post
+                    const isOwnSavedPost = activeTab === 'saved-posts' && actualPost?.owner?.username === profile?.username
+                    return (
+                        <motion.div
+                            key={post.id}
+                            className="aspect-square relative group cursor-pointer"
+                            initial={{ opacity: 0, scale: 0.8 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            transition={{ delay: index * 0.1 }}
+                            onClick={() => handlePostClick(actualPost.id)}
+                        >
+                            <img
+                                src={activeTab === 'saved-posts' ? actualPost.image : post.image}
+                                alt="Post"
+                                className="w-full h-full object-cover rounded-lg"
+                            />
+                            {/* Private post indicator */}
+                            {activeTab === 'private-posts' && (
+                                <div className="absolute top-2 right-2 bg-black bg-opacity-50 rounded-full p-1">
+                                    <Lock className="h-3 w-3 text-white" />
+                                </div>
+                            )}
+                            {/* Saved post indicator */}
+                            {activeTab === 'saved-posts' && (
+                                <div className="absolute top-2 right-2 bg-black bg-opacity-50 rounded-full p-1">
+                                    <Bookmark className="h-3 w-3 text-white fill-white" />
+                                </div>
+                            )}
+                            {/* Delete button for my-posts, private-posts, and own saved posts */}
+                            {(activeTab === 'my-posts' || activeTab === 'private-posts' || isOwnSavedPost) && (
+                                <button
+                                    className="absolute top-2 left-2 bg-red-600 text-white rounded-full px-2 py-1 text-xs z-10"
+                                    onClick={e => {
+                                        e.stopPropagation()
+                                        handleDeletePost(actualPost.id, activeTab)
+                                    }}
+                                >
+                                    Delete
+                                </button>
+                            )}
+
+                            <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-all duration-200 rounded-lg flex items-center justify-center">
+                                <div className="opacity-0 group-hover:opacity-100 text-white text-center">
+                                    <div className="flex items-center space-x-4">
+                                        <span className="text-sm font-medium">
+                                            ❤️ {activeTab === 'saved-posts' ? (actualPost.like_count || 0) : (post.like_count || 0)}
+                                        </span>
+                                        <span className="text-sm font-medium">
+                                            💬 {activeTab === 'saved-posts' ? (actualPost.comment_count || 0) : (post.comment_count || 0)}
+                                        </span>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                    </motion.div>
-                ))}
+                        </motion.div>
+                    )
+                })}
             </div>
         )
     }
@@ -301,34 +334,31 @@ const ProfilePage = () => {
                     <nav className="flex space-x-8">
                         <button
                             onClick={() => setActiveTab('my-posts')}
-                            className={`py-2 px-1 border-b-2 font-medium text-sm flex items-center space-x-2 ${
-                                activeTab === 'my-posts'
-                                    ? 'text-pink-600'
-                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                            }`}
+                            className={`py-2 px-1 border-b-2 font-medium text-sm flex items-center space-x-2 ${activeTab === 'my-posts'
+                                ? 'text-pink-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                }`}
                         >
                             <Grid className="h-4 w-4" />
-                            
+
                             <span>My Posts ({posts.length})</span>
                         </button>
                         <button
                             onClick={() => setActiveTab('private-posts')}
-                            className={`py-2 px-1 border-b-2 font-medium text-sm flex items-center space-x-2 ${
-                                activeTab === 'private-posts'
-                                    ? ' text-pink-600'
-                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                            }`}
+                            className={`py-2 px-1 border-b-2 font-medium text-sm flex items-center space-x-2 ${activeTab === 'private-posts'
+                                ? ' text-pink-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                }`}
                         >
                             <Lock className="h-4 w-4" />
                             <span>Private Posts ({privatePosts.length})</span>
                         </button>
                         <button
                             onClick={() => setActiveTab('saved-posts')}
-                            className={`py-2 px-1 border-b-2 font-medium text-sm flex items-center space-x-2 ${
-                                activeTab === 'saved-posts'
-                                    ? 'text-pink-600'
-                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                            }`}
+                            className={`py-2 px-1 border-b-2 font-medium text-sm flex items-center space-x-2 ${activeTab === 'saved-posts'
+                                ? 'text-pink-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                }`}
                         >
                             <Bookmark className="h-4 w-4" />
                             <span>Saved Posts ({savedPosts.length})</span>

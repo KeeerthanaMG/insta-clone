@@ -191,16 +191,17 @@ const Login = ({ onLogin }) => {
                     <button
                         type="submit"
                         disabled={loading}
-                        className="w-full bg-gradient-to-r from-pink-500 to-purple-600 text-white py-4 rounded-2xl font-bold text-lg transition-all duration-200 hover:shadow-2xl hover:scale-[1.02] disabled:opacity-50 disabled:transform-none disabled:hover:shadow-none"
+                        className="w-full bg-gradient-to-r from-pink-500 to-purple-600 text-white py-4 rounded-2xl font-bold text-lg transition-all duration-200 hover:shadow-2xl hover:scale-[1.02]"
                     >
-                        {loading ? (
+                        {/* {loading ? (
                             <div className="flex items-center justify-center space-x-2">
                                 <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                                 <span>Signing in...</span>
                             </div>
                         ) : (
                             'Sign In'
-                        )}
+                        )} */}
+                        Sign In
                     </button>
                 </form>
 

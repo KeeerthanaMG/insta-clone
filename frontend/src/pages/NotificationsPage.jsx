@@ -70,9 +70,9 @@ const NotificationsPage = () => {
     const getNotificationIcon = (notificationType) => {
         switch (notificationType) {
             case 'like':
-                return <Heart className="h-6 w-6 text-red-500" />
-            case 'comment':
                 return <MessageCircle className="h-6 w-6 text-blue-500" />
+            case 'comment':
+                return <Heart className="h-6 w-6 text-red-500" />
             case 'follow':
                 return <UserPlus className="h-6 w-6 text-green-500" />
             default:
@@ -162,8 +162,8 @@ const NotificationsPage = () => {
                                 key={tab.key}
                                 onClick={() => setFilter(tab.key)}
                                 className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors ${filter === tab.key
-                                        ? 'bg-white text-gray-900 shadow-sm'
-                                        : 'text-gray-600 hover:text-gray-900'
+                                    ? 'bg-white text-gray-900 shadow-sm'
+                                    : 'text-gray-600 hover:text-gray-900'
                                     }`}
                             >
                                 {tab.label}
