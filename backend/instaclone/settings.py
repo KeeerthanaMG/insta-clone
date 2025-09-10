@@ -1,5 +1,8 @@
 from pathlib import Path
 from decouple import config, Csv
+import os
+from dotenv import load_dotenv
+load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -53,16 +56,24 @@ TEMPLATES = [
 WSGI_APPLICATION = "instaclone.wsgi.application"
 ASGI_APPLICATION = "instaclone.asgi.application"
 
-DATABASES = {
-    "default": {
-        "ENGINE": config("DATABASE_ENGINE", default="django.db.backends.sqlite3"),
-        "NAME": config("DATABASE_NAME", default="db.sqlite3"),
-        "USER": config("DATABASE_USER", default=""),
-        "PASSWORD": config("DATABASE_PASSWORD", default=""),
-        "HOST": config("DATABASE_HOST", default="localhost"),
-        "PORT": config("DATABASE_PORT", default="5432"),
+if os.getenv("DATABASE_ENGINE") == "django.db.backends.sqlite3":
+    DATABASES = {
+        'default': {
+            'ENGINE': os.getenv("DATABASE_ENGINE"),
+            'NAME': os.path.join(BASE_DIR, os.getenv("DATABASE_NAME", "db.sqlite3")),
+        }
     }
-}
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': os.getenv("POSTGRES_ENGINE"),
+            'NAME': os.getenv("POSTGRES_NAME"),
+            'USER': os.getenv("POSTGRES_USER"),
+            'PASSWORD': os.getenv("POSTGRES_PASSWORD"),
+            'HOST': os.getenv("POSTGRES_HOST"),
+            'PORT': os.getenv("POSTGRES_PORT", "5432"),
+        }
+    }
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
@@ -121,9 +132,15 @@ CACHES = {
     }
 }
 
+REDIS_URL = config("REDIS_URL", default="redis://localhost:6379/0")
+CHANNEL_BACKEND = config("CHANNEL_BACKEND", default="channels.layers.InMemoryChannelLayer")
+
 CHANNEL_LAYERS = {
     "default": {
-        "BACKEND": config("CHANNEL_BACKEND", default="channels.layers.InMemoryChannelLayer"),
+        "BACKEND": CHANNEL_BACKEND,
+        "CONFIG": {
+            "hosts": [REDIS_URL],
+        } if "RedisChannelLayer" in CHANNEL_BACKEND else {},
     },
 }
 
