@@ -4,9 +4,10 @@
 /frontend/out/
 /frontend/build/
 /frontend/dist/
-/frontend/.env*
+/frontend/.env
 /frontend/coverage/
 /frontend/*.tsbuildinfo
+.DS_Store
 
 # Backend (Django/Python)
 /backend/venv/
@@ -20,7 +21,7 @@
 /backend/db.sqlite3*
 /backend/media/
 /backend/staticfiles/
-/backend/.env*
+/backend/.env
 /backend/*.log
 
 # IDE and Editor files
@@ -70,3 +71,4 @@ coverage/
 
 # Documentation
 docs/_build/
+.DS_Store
